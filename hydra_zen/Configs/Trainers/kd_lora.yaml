@@ -9,8 +9,10 @@ trainer_output_dir: ???
 wandb_api_key: ???
 project: PEKA
 clip_grad: 1.0
-max_epochs: 10
-additional_pl_paras: {}
+max_epochs: 50   # PEKA paper (arXiv 2504.07061) trains the alignment for 50 epochs
+# effective batch = dataset batch_size x accumulate_grad_batches (8 x 4 = 32)
+additional_pl_paras:
+  accumulate_grad_batches: 4
 with_logger: wandb
 save_ckpt: true
 ckpt_format: '{epoch:02d}-{val_CosineSimilarity:.2f}'

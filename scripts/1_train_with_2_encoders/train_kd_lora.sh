@@ -6,6 +6,10 @@ set -e
 script_dir=$(dirname "$(readlink -f "$0")")
 cd "$script_dir"
 
+# large uneven activation blocks fragment the allocator; expandable segments
+# let it reuse them instead
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
 # Dataset configuration components
 TISSUE_TYPE="breast"
 DATASET_NAME="${TISSUE_TYPE}_visium_26k"
@@ -14,7 +18,9 @@ GEN_LABEL="clustered100"
 
 # Config paths, relative to hydra_zen/Configs/
 DATASET_CONFIG="Datasets/${DATASET_NAME}_${SCLLM}_with_${GEN_LABEL}_label.yaml"
-MODEL_CONFIG="Models/H-optimus-0_LoRA_MLP.yaml"
+# PEKA itself is the Block-Affine (Bone) adapter; the LoRA / AdaLoRA / HRA configs
+# are the baselines the paper compares against. Bone needs peft >= 0.14.0.
+MODEL_CONFIG="Models/H-optimus-0_Bone_MLP.yaml"
 # knowledge distillation needs the CrossEntropyLoss variants, not the regression defaults
 OPTIMIZER_CONFIG="Optimizers/kd_lora.yaml"
 TRAINER_CONFIG="Trainers/kd_lora.yaml"

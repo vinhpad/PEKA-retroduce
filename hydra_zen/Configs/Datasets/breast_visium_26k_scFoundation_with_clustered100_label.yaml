@@ -11,7 +11,7 @@ batch_switch_interval: 1000
 patch_size: 224
 pixel_size: 0.5
 img_prefix: patch_{patch_size}_{pixel_size}
-batch_size: 32
+batch_size: 8   # H-optimus-0 is a ~1.1B ViT; 32 does not fit a 24GB card while training
 num_workers: 4
 shuffle: false
 split_dataset: true

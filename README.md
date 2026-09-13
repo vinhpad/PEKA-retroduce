@@ -761,6 +761,35 @@ python 4_plot_gene_correlation.py \
 
 ---
 
+### Reproducing the paper
+
+Settings from [PEKA, arXiv:2504.07061](https://arxiv.org/html/2504.07061v1) mapped onto
+this repo. Values marked ✅ are already the shipped defaults.
+
+| Paper | Where | Value to use |
+|---|---|---|
+| PEKA adapter = Block-Affine (**Bone**) | `--model_config` | `Models/H-optimus-0_Bone_MLP.yaml` |
+| LoRA / AdaLoRA are **baselines**, not PEKA | `--model_config` | `Models/H-optimus-0_{LoRA,AdaLoRA}_MLP.yaml` |
+| r=256, α=32, dropout=0.1 | `Models/*.yaml` | ✅ `lora_r: 256`, `lora_alpha: 32`, `lora_dropout: 0.1` |
+| Adam, lr 1e-4 | `Optimizers/kd_lora.yaml` | ✅ |
+| 50 epochs | `Trainers/kd_lora.yaml` | ✅ `max_epochs: 50` |
+| λ₁=λ₂=0.5 (KD vs structure loss) | `PL_Model/kd_lora.yaml` | ✅ `alpha: 0.5` |
+| PCA(256) + Ridge, top-50 HVG, 5-fold | Phase 2 | ✅ |
+| scFoundation teacher | Step 0.3 | ✅ |
+| Visium ST only | `Datasets/peka_other_datasets.csv` | set `platform` to `Visium` (see Step 0.1 note) |
+
+**Bone requires `peft>=0.14.0`** — `BoneConfig` does not exist before that, and the error
+message from `model_part_helpers` says so. `pip install -U "peft>=0.14.0"`.
+
+Not stated in the paper, so left at the repo defaults: KD temperature (`temperature: 2.0`),
+number of cluster labels (`N_CLUSTERS=100` in Step 0.5; the paper says "k-nearest neighbor
+clustering" without giving k), and batch size (the paper only reports 12 GPU hours on one
+V100). `batch_size: 8` × `accumulate_grad_batches: 4` here gives an effective batch of 32
+and fits a 24GB card.
+
+The paper reports ~5% of backbone parameters as trainable; `kd_lora_train.py` prints the
+trainable count at startup, so you can check that directly.
+
 ### Complete Pipeline Execution
 
 End-to-end for breast, using the paper's subset:
