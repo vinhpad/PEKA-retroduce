@@ -4,7 +4,33 @@ some naive code to simplify the usage of hydra-zen
 """
 import torch
 import timm
-from peft import LoraConfig, AdaLoraConfig, HRAConfig, BoneConfig
+import peft
+
+# method name -> peft config class name, resolved lazily so that an older peft only
+# breaks when you actually select a method it does not ship
+_PEFT_CONFIG_CLASSES = {
+    "lora": ("LoraConfig", "0.3.0"),
+    "adalora": ("AdaLoraConfig", "0.3.0"),
+    "hra": ("HRAConfig", "0.12.0"),
+    "bone": ("BoneConfig", "0.14.0"),
+}
+
+
+def _resolve_peft_config_cls(peft_method: str):
+    if peft_method not in _PEFT_CONFIG_CLASSES:
+        raise ValueError(
+            f"Unsupported peft_method: {peft_method}. "
+            f"Supported: {sorted(_PEFT_CONFIG_CLASSES)}"
+        )
+    cls_name, since = _PEFT_CONFIG_CLASSES[peft_method]
+    cls = getattr(peft, cls_name, None)
+    if cls is None:
+        raise ImportError(
+            f"peft_method '{peft_method}' needs {cls_name}, which is not available in "
+            f"peft {getattr(peft, '__version__', '?')} (added in peft {since}). "
+            f"Upgrade with:  pip install -U 'peft>={since}'"
+        )
+    return cls
 from omegaconf import ListConfig
 from typing import Optional
 
@@ -35,15 +61,17 @@ def model_config(
 
     peft_method = translate_additional_params.get("peft_method", "lora") if translate_additional_params else "lora"
     
+    peft_config_cls = _resolve_peft_config_cls(peft_method)
+
     if peft_method == "lora":
-        peft_config = LoraConfig(
+        peft_config = peft_config_cls(
             r=lora_r,  # LoRA rank, dimension of low-rank matrix
             lora_alpha=lora_alpha,  # scale factor, controls the impact of LoRA
             lora_dropout=lora_dropout,  # dropout rate of LoRA layer, prevents overfitting
             target_modules=None,  # target modules, specify which layers apply LoRA, None means automatic selection
         )
     elif peft_method == "adalora":
-        peft_config = AdaLoraConfig(
+        peft_config = peft_config_cls(
             r=lora_r,  # initial LoRA rank
             lora_alpha=lora_alpha,  # scale factor
             lora_dropout=lora_dropout,  # dropout rate
@@ -55,19 +83,17 @@ def model_config(
             total_step=translate_additional_params.get("total_step", None),  # total training steps, used for budget allocation
         )
     elif peft_method == "hra":
-        peft_config = HRAConfig(
+        peft_config = peft_config_cls(
             r=lora_r,  # HRA rank, suggest to set as even number for default initialization method to work
             apply_GS=translate_additional_params.get("apply_GS", False),  # whether apply Gram-Schmidt orthogonization
             target_modules=None,  # target modules, specify which layers apply HRA
         )
     elif peft_method == "bone":
-        peft_config = BoneConfig(
+        peft_config = peft_config_cls(
             r=lora_r,  # Bone rank, suggest to set as even number for default initialization method to work
             target_modules=None,  # target modules
             init_weights=translate_additional_params.get("init_weights", True),  # weight initialization method, True uses Bone structure, 'bat' uses Bat structure
         )
-    else:
-        raise ValueError(f"Unsupported peft_method: {peft_method}")
 
     translate_model = get_module(translate_module_name,
                                 encoder_output_dim, 

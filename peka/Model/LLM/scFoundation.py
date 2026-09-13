@@ -296,6 +296,7 @@ class scFoundation_embedder(scLLM_QC_preprocess):
         #Inference
         n_spots = gexpr_feature.shape[0]
         oom_retries = 0
+        torch.cuda.reset_peak_memory_stats()   # peak is per slide
         pbar = tqdm(range(n_spots), desc="    ↳ spots", unit="spot", leave=False)
         for i in pbar:
             with torch.no_grad():
@@ -305,9 +306,12 @@ class scFoundation_embedder(scLLM_QC_preprocess):
                 value_labels = pretrain_gene_x > 0
                 value_nums = value_labels.sum(1)
                 max_num = max(value_nums)
+                # `gpu` is live memory at the top of the iteration; the attention spike
+                # lives and dies inside the forward, so `pk` is what shows the real load
                 pbar.set_postfix({
                     "L": int(max_num),
                     "gpu": f"{torch.cuda.memory_allocated()/2**30:.1f}G",
+                    "pk": f"{torch.cuda.max_memory_allocated()/2**30:.1f}G",
                     "oom": oom_retries,
                     "zero": len(degenerate_rows),
                 })
@@ -371,6 +375,8 @@ class scFoundation_embedder(scLLM_QC_preprocess):
                     geneexpemb.append(None)
 
         pbar.close()
+        logger.info(f" 🤖 slide done on {next(self.pretrainmodel.parameters()).device}, "
+                    f"peak GPU {torch.cuda.max_memory_allocated()/2**30:.2f} GiB")
         if oom_retries:
             logger.warning(f" 🤖 recovered from {oom_retries} OOM(s) by retrying")
         if degenerate_rows:

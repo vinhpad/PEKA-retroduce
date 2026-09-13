@@ -1,11 +1,14 @@
 import torch
 import torch.nn as nn
-from peft import LoraConfig, AdaLoraConfig, HRAConfig, BoneConfig, get_peft_model
+# PeftConfig is the common base of every adapter config and exists in all peft
+# versions; naming the concrete classes here made the import fail on older peft
+# even when the selected method did not need them.
+from peft import PeftConfig, get_peft_model
 from typing import Optional, Union
 
 class HistoPath_AlignmentModel(nn.Module):
     def __init__(self, encoder:nn.Module, translate_model:nn.Module, 
-                lora_paras: Union[LoraConfig, AdaLoraConfig, HRAConfig, BoneConfig, None]=None):
+                lora_paras: Optional[PeftConfig]=None):
         super(HistoPath_AlignmentModel, self).__init__()
 
         # load H-optimus-0 model output_dim 1536
