@@ -9,6 +9,7 @@ import scFoundation
 import os
 import shutil
 import random
+from tqdm import tqdm
 import numpy as np
 import pandas as pd
 
@@ -293,7 +294,10 @@ class scFoundation_embedder(scLLM_QC_preprocess):
         degenerate_rows = []   # spots with <=2 expressed genes, filled in after the loop
         gexpr_feature = convert_to_scFoundation_vocab_length(adata, self.gene_list)
         #Inference
-        for i in range(gexpr_feature.shape[0]):
+        n_spots = gexpr_feature.shape[0]
+        oom_retries = 0
+        pbar = tqdm(range(n_spots), desc="    ↳ spots", unit="spot", leave=False)
+        for i in pbar:
             with torch.no_grad():
                 pretrain_gene_x = preprocess_data_for_scFoundation(i, gexpr_feature, preprocess_type, tgthighres)
                 data_gene_ids = torch.arange(19266, device=pretrain_gene_x.device).repeat(pretrain_gene_x.shape[0], 1)
@@ -301,6 +305,12 @@ class scFoundation_embedder(scLLM_QC_preprocess):
                 value_labels = pretrain_gene_x > 0
                 value_nums = value_labels.sum(1)
                 max_num = max(value_nums)
+                pbar.set_postfix({
+                    "L": int(max_num),
+                    "gpu": f"{torch.cuda.memory_allocated()/2**30:.1f}G",
+                    "oom": oom_retries,
+                    "zero": len(degenerate_rows),
+                })
                 if max_num >2:
                     def _encode_spot():
                         x, x_padding = gatherData(pretrain_gene_x, value_labels, self.pretrainconfig['pad_token_id'])
@@ -341,7 +351,8 @@ class scFoundation_embedder(scLLM_QC_preprocess):
                     if geneembmerge is None:
                         # outside the except block the traceback is gone, so the failed
                         # attempt's tensors are finally collectable
-                        logger.warning(
+                        oom_retries += 1
+                        tqdm.write(
                             f" 🤖 OOM on spot {i} (L={oom_len} expressed genes); "
                             f"emptying CUDA cache and retrying"
                         )
@@ -356,13 +367,12 @@ class scFoundation_embedder(scLLM_QC_preprocess):
                     # degenerate, and silently copies another spot's embedding otherwise.
                     # Emit an explicit zero vector instead, preserving row alignment
                     # with ~filter_flag.
-                    logger.warning(
-                        f" 🤖 spot {i} has only {int(max_num)} expressed gene(s); "
-                        f"writing a zero embedding for it"
-                    )
                     degenerate_rows.append(len(geneexpemb))
                     geneexpemb.append(None)
 
+        pbar.close()
+        if oom_retries:
+            logger.warning(f" 🤖 recovered from {oom_retries} OOM(s) by retrying")
         if degenerate_rows:
             width = next((e.shape[-1] for e in geneexpemb if e is not None), None)
             if width is None:

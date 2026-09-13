@@ -83,12 +83,16 @@ class scLLM_QC_preprocess:
         """
         self.current_idx = 0
         self.not_processed_idx = []
-        for idx in tqdm(range(len(self.dataset_index_df)),desc=" 🤖 processing subdataset"):
+        n_done = n_skipped = 0
+        outer = tqdm(range(len(self.dataset_index_df)), desc=" 🤖 subdataset", unit="slide")
+        for idx in outer:
             self.current_idx = idx
+            outer.set_postfix({"ok": n_done, "skip": n_skipped, "fail": len(self.not_processed_idx)})
             adata_loc = f"{self.align_adata_folder}/HEST_breast_adata_{idx}.h5ad"
             embed_loc = f"{self.embeddings_folder}/HEST_breast_adata_{idx}.npy"
             if not force and os.path.exists(embed_loc):
-                logger.info(f" 🤖 {idx}th sample already embedded, skip (use force=True to redo)")
+                n_skipped += 1
+                tqdm.write(f" 🤖 {idx}th sample already embedded, skip (FORCE_REPROCESS=1 to redo)")
                 continue
             try:
                 adata = sc.read_h5ad(adata_loc)
@@ -101,12 +105,16 @@ class scLLM_QC_preprocess:
             except Exception as e:
                 # str(e) alone loses the origin of the failure, which matters when only
                 # a couple of slides out of many fail
+                tqdm.write(f" ❌ {idx}th sample failed: {type(e).__name__}: {e}")
                 logger.error(f"[Error]!!! processing {idx}th sample: {type(e).__name__}: {e}")
                 logger.error(f"[Traceback] {idx}th sample:\n{traceback.format_exc()}")
                 self.not_processed_idx.append(idx)
                 continue
             else:
-                logger.info(f"Successfully processed {idx}th sample")
+                n_done += 1
+                tqdm.write(f" ✅ {idx}th sample embedded -> {os.path.basename(embed_loc)}")
+        outer.set_postfix({"ok": n_done, "skip": n_skipped, "fail": len(self.not_processed_idx)})
+        outer.close()
         if len(self.not_processed_idx) > 0:
             logger.warning(f" 🤖 {len(self.not_processed_idx)} samples not processed..")
             csv_not_processed = f"{self.embeddings_folder}/not_processed_idx.csv"
