@@ -1,4 +1,4 @@
-from peka import logger
+from peka import logger, EXTERNAL_MODELS_DIR
 from peka.Model.LLM.base import scLLM_QC_preprocess, filter_zero_row
 
 ########################################################################################
@@ -6,6 +6,8 @@ from peka.Model.LLM.base import scLLM_QC_preprocess, filter_zero_row
 ########################################################################################
 import scFoundation
 
+import os
+import shutil
 import random
 import numpy as np
 import pandas as pd
@@ -199,6 +201,8 @@ class scFoundation_embedder(scLLM_QC_preprocess):
         # set gene list
         ckpt_path = self.pretrained_ckpt_dir + "/default_model.ckpt"
         vocab_path = self.pretrained_ckpt_dir + "/OS_scRNA_gene_index.19264.tsv"
+        self._ensure_gene_vocab(vocab_path)
+        self._check_ckpt(ckpt_path)
         self.get_gene_vocab(vocab_path)
         self.pretrainmodel,self.pretrainconfig = load_model_frommmf(ckpt_path,model_mode)
         self.pretrainmodel.eval()
@@ -215,6 +219,43 @@ class scFoundation_embedder(scLLM_QC_preprocess):
 
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+
+    @staticmethod
+    def _ensure_gene_vocab(vocab_path):
+        """The gene vocabulary ships inside the scFoundation submodule, so copy it in
+        instead of asking the user to place it by hand."""
+        if os.path.exists(vocab_path):
+            return
+        vocab_name = os.path.basename(vocab_path)
+        candidates = [
+            os.path.join(EXTERNAL_MODELS_DIR, "scFoundation", "model", vocab_name),
+            os.path.join(EXTERNAL_MODELS_DIR, "scFoundation", "preprocessing", vocab_name),
+            os.path.join(EXTERNAL_MODELS_DIR, "scFoundation", vocab_name),
+        ]
+        for source in candidates:
+            if os.path.exists(source):
+                os.makedirs(os.path.dirname(vocab_path), exist_ok=True)
+                shutil.copyfile(source, vocab_path)
+                logger.info(f" 🤖 copied gene vocabulary from {source} to {vocab_path}")
+                return
+        raise FileNotFoundError(
+            f"scFoundation gene vocabulary not found at {vocab_path}, and it could not be "
+            f"resolved from the submodule. Checked: {candidates}. "
+            f"Initialise the submodule with `git submodule update --init --recursive`, "
+            f"or copy {vocab_name} there manually."
+        )
+
+    @staticmethod
+    def _check_ckpt(ckpt_path):
+        if os.path.exists(ckpt_path):
+            return
+        raise FileNotFoundError(
+            f"scFoundation checkpoint not found: {ckpt_path}\n"
+            f"  The weights are not downloaded automatically. Get 'models.ckpt' from\n"
+            f"  https://hopebio2020.sharepoint.com/:f:/s/PublicSharedfiles/IgBlEJ72TBE5Q76AmgXbgjXiAR69fzcrgzqgUYdSThPLrqk\n"
+            f"  then place it as:  {ckpt_path}\n"
+            f"  (i.e. rename models.ckpt -> default_model.ckpt)"
+        )
 
     def get_gene_vocab(self,gene_vocab_file):
         gene_list_df = pd.read_csv(gene_vocab_file, header=0, delimiter='\t')
