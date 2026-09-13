@@ -63,6 +63,30 @@ def get_args():
     parser.add_argument("--exp_name", type=str, required=True, help="Experiment name for wandb logging")
     return parser.parse_args()
 
+def preflight_logger(trainer_config, entity, api_key):
+    """Validate the logger before phase 1, not after it.
+
+    Phase 1 trains a classifier for 20 epochs; a bad wandb entity used to surface only
+    at trainer.fit(), throwing that work away.
+    """
+    if str(trainer_config.get("with_logger", "")) != "wandb":
+        return
+    if not api_key:
+        raise ValueError(
+            "Trainer config uses with_logger: wandb but WANDB_API_KEY is unset in .env. "
+            "Set it, or change with_logger in the trainer config."
+        )
+    import wandb
+    wandb.login(key=api_key)
+    default_entity = wandb.Api().default_entity
+    if entity and entity != default_entity:
+        print(f" ⚠️  WANDB_ENTITY={entity!r} differs from your account default "
+              f"{default_entity!r}. wandb.init will fail unless {entity!r} is a team "
+              f"you belong to. Leave WANDB_ENTITY empty in .env to use the default.")
+    else:
+        print(f" ⭐️ wandb entity: {entity or default_entity}")
+
+
 def train_phase_2(
     train_loader,
     val_loader,
@@ -156,6 +180,8 @@ def main():
     )
     output_dir = experiment_dir
     
+    preflight_logger(trainer_config, WANDB_ENTITY, WANDB_API_KEY)
+
     # load dataset
     train_loader, val_loader, target_dim = instantiate(
         dataset_config,

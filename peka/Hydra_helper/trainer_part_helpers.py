@@ -58,7 +58,11 @@ def trainer_config(
         logger.debug(f"with logger wandb")
         # 4. Create wandb logger
         from pytorch_lightning.loggers import WandbLogger
-        os.environ["WANDB_API_KEY"]=wandb_api_key
+        if wandb_api_key:
+            os.environ["WANDB_API_KEY"] = wandb_api_key
+        # entity=None makes wandb fall back to the account default, which is what an
+        # empty WANDB_ENTITY in .env should mean
+        entity = entity or None
 
         wandb_logger = WandbLogger(project=project,
                                     entity=entity,
