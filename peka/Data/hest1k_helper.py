@@ -15,7 +15,7 @@ from torchvision import transforms
 import numpy as np
 import time
 
-from peka import logger
+from peka import logger, WORKSPACE_DIR
 HEST_DB_INDEX_PREFIX = "HEST_v1_1_0.csv"
 
 
@@ -24,6 +24,9 @@ HEST_DB_INDEX_PREFIX = "HEST_v1_1_0.csv"
 ###########################################################################################
 def get_latest_version_hest_index(hest_loc, prefix="HEST_", extension=".csv"):
     logger.info(f"🤖 searching for latest version of HEST index in {hest_loc}")
+    if not os.path.isdir(hest_loc):
+        logger.info(f"🤖 {hest_loc} does not exist yet.")
+        return None, None
     version_files = [f for f in os.listdir(hest_loc) if f.startswith(prefix) and f.endswith(extension)]
     
     if not version_files:
@@ -41,8 +44,9 @@ def get_hest_db_index(hest_loc, hest_db_index_prefix=HEST_DB_INDEX_PREFIX):
     if file_loc is None:
         # Copy from repo using prefix
         logger.info(f"Copying {hest_db_index_prefix} from repo to {hest_loc}")
-        code_path = os.path.abspath(os.path.join(os.getcwd(), '../..'))
-        hest_db_index_file_copy_loc = f"{code_path}/support_files/{hest_db_index_prefix}"
+        # resolve against the checkout, not the CWD
+        hest_db_index_file_copy_loc = f"{WORKSPACE_DIR}/support_files/{hest_db_index_prefix}"
+        os.makedirs(hest_loc, exist_ok=True)
         shutil.copy(hest_db_index_file_copy_loc, hest_loc)
         file_loc = os.path.join(hest_loc, hest_db_index_prefix)
         file_name = hest_db_index_prefix
@@ -195,6 +199,75 @@ def get_final_index_file(temp_files,filtered_loc, final_index_loc):
     for temp_file in temp_files:
         os.remove(temp_file)
     return final_index_loc
+
+def select_hest_ids(hest_index_df, organ, species="Homo sapiens",
+                    platform_list=None, oncotree_code=None):
+    """IDs matching one sub-dataset definition.
+
+    Mirrors construct_hest1k_tissue_index + construct_platform_index so that what gets
+    downloaded and what the pipeline later selects cannot drift apart.
+    """
+    mask = (hest_index_df["species"] == species) & (hest_index_df["organ"] == organ)
+    if oncotree_code:
+        mask = mask & (hest_index_df["oncotree_code"] == oncotree_code)
+    filtered = hest_index_df[mask]
+    if platform_list:
+        filtered = filtered[filtered["st_technology"].isin(list(platform_list))]
+    return filtered["id"].astype(str).tolist()
+
+
+def collect_required_hest_ids(hest_loc, dataset_predefine_list=None, dataset_names=None):
+    """Union of the HEST sample IDs required by the predefined sub-datasets.
+
+    Args:
+        hest_loc: HEST1K storage folder (used to locate the index CSV)
+        dataset_predefine_list: predefine CSV names under hydra_zen/Configs/Datasets/,
+            or absolute paths. Defaults to the breast + other definitions.
+        dataset_names: optional subset of `dataset_name` values to keep, e.g. the four
+            benchmarks used in the paper.
+
+    Returns:
+        (sorted list of ids, {dataset_name: id count})
+    """
+    if dataset_predefine_list is None:
+        dataset_predefine_list = ["peka_breast_datasets.csv", "peka_other_datasets.csv"]
+
+    index_loc, _ = get_hest_db_index(hest_loc)
+    meta_df = pd.read_csv(index_loc)
+    configs_dir = f"{WORKSPACE_DIR}/hydra_zen/Configs/Datasets"
+
+    all_ids = set()
+    per_dataset = {}
+    for predefine in dataset_predefine_list:
+        path = predefine if os.path.isabs(predefine) else f"{configs_dir}/{predefine}"
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Dataset definition not found: {path}")
+        for _, row in pd.read_csv(path).iterrows():
+            name = row["dataset_name"]
+            if dataset_names and name not in dataset_names:
+                continue
+            platform_list = [p.replace("_", " ") for p in str(row["platform"]).split()] \
+                if pd.notna(row["platform"]) else None
+            ids = select_hest_ids(
+                meta_df,
+                organ=row["organ"],
+                species=row["species"],
+                platform_list=platform_list,
+                oncotree_code=row["oncotree_code"] if pd.notna(row["oncotree_code"]) else None,
+            )
+            per_dataset[name] = len(ids)
+            all_ids.update(ids)
+            logger.info(f"🤖 {name}: {len(ids)} WSI")
+
+    if dataset_names:
+        unknown = set(dataset_names) - set(per_dataset)
+        if unknown:
+            raise ValueError(f"Unknown dataset name(s): {sorted(unknown)}. "
+                             f"Available: {sorted(per_dataset)}")
+
+    logger.info(f"🤖 {len(all_ids)} unique WSI required (out of {len(meta_df)} in HEST1k)")
+    return sorted(all_ids), per_dataset
+
 
 def construct_sub_dataset_index(data_para:HEST1K_sub_database, with_explore:bool=False):
     """

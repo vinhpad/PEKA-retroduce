@@ -39,7 +39,10 @@ def parse_additional_info(info_str: str) -> Dict[str, Any]:
     params = {}
     pairs = info_str.split()
     for pair in pairs:
-        key, value = pair.split("=")
+        key, value = pair.split("=", 1)
+        # strip the quotes the CSV uses around string values, otherwise a value like
+        # model_mode="gene" is passed through as the 6-character string '"gene"'
+        value = value.strip().strip('"').strip("'")
         # try to convert value to appropriate type
         try:
             if value.lower() == 'true':
@@ -94,7 +97,9 @@ def main():
     optional_params = {}
     for key in model_params.keys():
         env_value = os.getenv(key.upper())
-        if env_value is not None:
+        # the shell wrapper exports these as empty strings when unused, so an empty
+        # value must fall back to the CSV default rather than override it
+        if env_value:
             optional_params[key] = env_value
         else:
             optional_params[key] = model_params[key]

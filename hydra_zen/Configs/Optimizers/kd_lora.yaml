@@ -1,4 +1,4 @@
-_target_: histomil2.Hydra_helper.opt_sch_part_helpers.opt_sch_config
+_target_: peka.Hydra_helper.opt_sch_part_helpers.opt_sch_config
 
 metrics_names:
   - MSE

@@ -1,4 +1,4 @@
-_target_: histomil2.Hydra_helper.trainer_part_helpers.trainer_config
+_target_: peka.Hydra_helper.trainer_part_helpers.trainer_config
 entity: ???
 exp_name: ???
 task_type: ???
@@ -7,7 +7,7 @@ model_name: ???
 ckpt_folder: ???
 trainer_output_dir: ???
 wandb_api_key: ???
-project: HistoMIL2
+project: PEKA
 clip_grad: 1.0
 max_epochs: 10
 additional_pl_paras: {}

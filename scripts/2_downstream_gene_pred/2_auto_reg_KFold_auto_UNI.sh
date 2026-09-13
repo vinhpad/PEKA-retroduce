@@ -1,5 +1,5 @@
 #!/bin/bash
-# 动态获得项目路径：因为脚本位置固定，但项目路径不固定
+# dynamic get project root, because script location is fixed, but project root is not fixed
 script_dir=$(dirname "$(readlink -f "$0")")
 PROJECT_ROOT=$(dirname "$(dirname "$(dirname "$script_dir")")")
 
@@ -7,25 +7,26 @@ PROJECT_ROOT=$(dirname "$(dirname "$(dirname "$script_dir")")")
 TISSUE_TYPE="breast"
 DATASET_NAME="breast_visium_26k"
 EMBEDDER_NAME="scFoundation"
-GENE_LIST_JSON="/home/pan/Experiments/EXPs/2025_HistoMIL2_workspace/HistoMIL2/scripts/2_downstream_gene_pred/top_50_genes_Visium_Homo_sapien_Breast_Cancer.json"
-BASE_OUTPUT_ROOT="/home/pan/Experiments/EXPs/2025_HistoMIL2_workspace/OUTPUT"
+GENE_LIST_JSON="${script_dir}/top_50_genes_Visium_Homo_sapien_Breast_Cancer.json"
+BASE_OUTPUT_ROOT="${PROJECT_ROOT}/OUTPUT"
 WITH_INDEPENDENT_TEST_SET=false
 EPOCHS=300
 IMAGE_ENCODER_NAME="UNI"
+IMAGE_BACKBONE="UNI"
 
 # Arrays for iteration
 BINNED_OPTIONS=(false true)
-FEATURE_TYPES=("image_encoder" "histomil2" "scLLM" "image_encoder+histomil2")
+FEATURE_TYPES=("image_encoder" "peka" "scLLM" "image_encoder+peka")
 
 # Iterate over all combinations
 for USE_BINNED in "${BINNED_OPTIONS[@]}"; do
     for FEATURE_TYPE in "${FEATURE_TYPES[@]}"; do
         echo "=== Running with USE_BINNED=${USE_BINNED} and FEATURE_TYPE=${FEATURE_TYPE} ==="
-        
+
         # Create specific output directory for this combination
         binned_str=$([ "$USE_BINNED" = true ] && echo "binned" || echo "raw")
-        OUTPUT_ROOT="${BASE_OUTPUT_ROOT}/${DATASET_NAME}/${binned_str}/"
-        
+        OUTPUT_ROOT="${BASE_OUTPUT_ROOT}/${TISSUE_TYPE}/${DATASET_NAME}/${binned_str}/"
+
         echo "PROJECT_ROOT: $PROJECT_ROOT"
         echo "TISSUE_TYPE: $TISSUE_TYPE"
         echo "DATASET_NAME: $DATASET_NAME"
@@ -41,7 +42,7 @@ for USE_BINNED in "${BINNED_OPTIONS[@]}"; do
         mkdir -p "$OUTPUT_ROOT"
 
         # Run the Python script with parameters
-        cmd="python ${PROJECT_ROOT}/HistoMIL2/scripts/2_downstream_gene_pred/task_gene_expr_reg_KFold.py \
+        cmd="python ${script_dir}/step3_task_gene_expr_reg_KFold.py \
         --project_root $PROJECT_ROOT \
         --tissue_type $TISSUE_TYPE \
         --dataset_name $DATASET_NAME \
@@ -51,6 +52,7 @@ for USE_BINNED in "${BINNED_OPTIONS[@]}"; do
         --feature_type $FEATURE_TYPE \
         --epochs $EPOCHS \
         --image_encoder_name $IMAGE_ENCODER_NAME \
+        --image_backbone \"$IMAGE_BACKBONE\" \
         --mask_zero_values"
 
         # Add optional flags based on conditions
@@ -65,7 +67,7 @@ for USE_BINNED in "${BINNED_OPTIONS[@]}"; do
         # Execute the command
         echo "Executing: $cmd"
         eval $cmd
-        
+
         echo "=== Finished combination USE_BINNED=${USE_BINNED} and FEATURE_TYPE=${FEATURE_TYPE} ==="
         echo
     done

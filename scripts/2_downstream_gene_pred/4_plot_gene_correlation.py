@@ -1,8 +1,23 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+import argparse
 
-def plot_gene_correlations(base_dir, output_dir, tissue):
+
+def _results_csv(base_dir, image_encoder_name, feature_type, data_type, embedder_name):
+    """Path layout written by step3_task_gene_expr_reg_KFold.py."""
+    return os.path.join(
+        base_dir,
+        image_encoder_name,
+        f"{feature_type}_gene_level_{data_type}_regression_{embedder_name}",
+        "gene_regression_results.csv",
+    )
+
+
+def plot_gene_correlations(base_dir, output_dir, tissue,
+                           image_encoder_name="H0",
+                           embedder_name="scFoundation",
+                           data_type="raw"):
     # Set font sizes
     plt.rcParams.update({
         'font.size': 14,
@@ -14,9 +29,13 @@ def plot_gene_correlations(base_dir, output_dir, tissue):
     })
 
     # Read the three CSV files
-    backbone_path = os.path.join(base_dir, "image_encoder/H-optimus-0_Bone_MLP/image_encoder_gene_level_raw_regression_scFoundation/gene_regression_results.csv")
-    peka_path = os.path.join(base_dir, "histomil2/H-optimus-0_Bone_MLP/histomil2_gene_level_raw_regression_scFoundation/gene_regression_results.csv")
-    peka_image_path = os.path.join(base_dir, "image_encoder+histomil2/H-optimus-0_Bone_MLP/image_encoder+histomil2_gene_level_raw_regression_scFoundation/gene_regression_results.csv")
+    backbone_path = _results_csv(base_dir, image_encoder_name, "image_encoder", data_type, embedder_name)
+    peka_path = _results_csv(base_dir, image_encoder_name, "peka", data_type, embedder_name)
+    peka_image_path = _results_csv(base_dir, image_encoder_name, "image_encoder+peka", data_type, embedder_name)
+
+    for path in (backbone_path, peka_path, peka_image_path):
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Missing regression results: {path}")
 
     # Read CSV files
     backbone_df = pd.read_csv(backbone_path)
@@ -57,18 +76,34 @@ def plot_gene_correlations(base_dir, output_dir, tissue):
     plt.tight_layout()
 
     # Save the plot as PDF
+    os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f'gene_correlation_comparison_{tissue}.pdf')
     plt.savefig(output_path, format='pdf', bbox_inches='tight')
     plt.close()
     
     print(f"Plot saved to: {output_path}")
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='Plot gene-level correlation comparison')
+    parser.add_argument('--results_dir', type=str, required=True,
+                        help='Regression output root, i.e. the --output_root given to '
+                             'step3_task_gene_expr_reg_KFold.py (e.g. OUTPUT/breast/breast_visium_26k/raw)')
+    parser.add_argument('--output_dir', type=str, required=True,
+                        help='Directory to write the PDF into')
+    parser.add_argument('--tissue', type=str, required=True,
+                        help='Tissue label used in the plot title and file name (e.g. Breast)')
+    parser.add_argument('--image_encoder_name', type=str, default="H0",
+                        help='Name of the image encoder model: (H0, UNI)')
+    parser.add_argument('--embedder_name', type=str, default="scFoundation",
+                        help='Name of the scLLM model')
+    parser.add_argument('--data_type', type=str, default="raw", choices=["raw", "binned"],
+                        help='Which regression variant to plot')
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    base_dir = "/home/pan/Experiments/EXPs/2025_HistoMIL2_workspace/OUTPUT/1_downstream_hvg_pred/breast/breast_visium_26k/raw/H-optimus-0_Bone_MLP"
-    #base_dir = "/home/pan/Experiments/EXPs/2025_HistoMIL2_workspace/OUTPUT/1_downstream_hvg_pred/other_cancer/kidney_in_hest/raw/H-optimus-0_Bone_MLP"
-    #base_dir = "/home/pan/Experiments/EXPs/2025_HistoMIL2_workspace/OUTPUT/1_downstream_hvg_pred/other_cancer/liver_in_hest/raw/H-optimus-0_Bone_MLP"
-    #base_dir = "/home/pan/Experiments/EXPs/2025_HistoMIL2_workspace/OUTPUT/1_downstream_hvg_pred/other_cancer/lung_in_hest/raw/H-optimus-0_Bone_MLP"
-    output_dir = "/home/pan/Experiments/EXPs/2025_HistoMIL2_workspace/OUTPUT"
-    #tissue = "Kidney"  # 设置组织类型
-    tissue = "Breast"  # 设置组织类型
-    plot_gene_correlations(base_dir, output_dir, tissue)
+    args = parse_args()
+    plot_gene_correlations(args.results_dir, args.output_dir, args.tissue,
+                           image_encoder_name=args.image_encoder_name,
+                           embedder_name=args.embedder_name,
+                           data_type=args.data_type)

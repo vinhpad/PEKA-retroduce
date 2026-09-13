@@ -7,10 +7,14 @@ from typing import Dict, List, Tuple
 from sklearn.feature_selection import mutual_info_regression
 
 import sys
-sys.path.append("/home/pan/Experiments/EXPs/2025_HistoMIL2_workspace/HistoMIL2")
+import argparse
 
-from histomil2.DownstreamTasks_helper.gene_expression_prediction import get_dataset_paths
-from histomil2.DownstreamTasks_helper.gene_expression_prediction import (
+# resolve the repo root from this file: scripts/2_downstream_gene_pred/ -> repo root
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO_ROOT not in sys.path:
+    sys.path.append(REPO_ROOT)
+
+from peka.DownstreamTasks_helper.gene_expression_prediction import (
     get_dataset_paths,
     _filter_from_image_and_seq_qc,
     feature_type_settings
@@ -127,20 +131,20 @@ def get_model_paths(dataset_root: str) -> Dict[str, List[str]]:
         dataset_root: 数据集根目录路径
         
     Returns:
-        包含histomil2和patches模型路径的字典
+        包含peka和patches模型路径的字典
     """
     model_paths = {
-        'histomil2': [],
+        'peka': [],
         'patches': []
     }
     
-    # 获取histomil2模型路径
-    histomil2_dir = os.path.join(dataset_root, 'histomil2_embed')
-    if os.path.exists(histomil2_dir):
-        for model_name in os.listdir(histomil2_dir):
-            model_path = os.path.join(histomil2_dir, model_name)
+    # 获取peka模型路径
+    peka_dir = os.path.join(dataset_root, 'peka_embed')
+    if os.path.exists(peka_dir):
+        for model_name in os.listdir(peka_dir):
+            model_path = os.path.join(peka_dir, model_name)
             if os.path.isdir(model_path) and len(os.listdir(model_path)) > 0:
-                model_paths['histomil2'].append(model_name)
+                model_paths['peka'].append(model_name)
     
     # 获取patches模型路径
     patches_dir = os.path.join(dataset_root, 'patches_embed')
@@ -208,7 +212,7 @@ def calculate_and_save_mi(raw_seq_embed: np.ndarray,
     Args:
         raw_seq_embed: 原始序列嵌入
         model_embed: 模型嵌入
-        model_type: 模型类型 (histomil2 或 patches)
+        model_type: 模型类型 (peka 或 patches)
         model_name: 模型名称
         results: 结果列表
         n_neighbors: 用于MI估计的近邻数量
@@ -279,17 +283,17 @@ def main(dataset_root: str,
     # 存储结果
     results = []
     
-    # 计算histomil2模型的互信息
-    for model_name in model_paths['histomil2']:
-        print(f"\nProcessing histomil2 model: {model_name}")
+    # 计算peka模型的互信息
+    for model_name in model_paths['peka']:
+        print(f"\nProcessing peka model: {model_name}")
         paths = base_paths.copy()
-        paths['embed_dir'] = os.path.join(dataset_root, 'histomil2_embed', model_name)
+        paths['embed_dir'] = os.path.join(dataset_root, 'peka_embed', model_name)
         paths['embed_path'] = paths['embed_dir']
         
         try:
             model_embeds, model_barcodes = load_all_embeddings(
                 seq_files=seq_files,
-                feature_type="histomil2",
+                feature_type="peka",
                 img_prefix="patch_224_0.5_",
                 embed_prefix="HEST_breast_adata_",
                 paths=paths
@@ -335,9 +339,9 @@ def main(dataset_root: str,
             
             print(f"Using total {final_raw_embed.shape[0]} samples for MI calculation")
             calculate_and_save_mi(final_raw_embed, final_model_embed, 
-                                'histomil2', model_name, results)
+                                'peka', model_name, results)
         except Exception as e:
-            print(f"Error processing histomil2 model {model_name}: {str(e)}")
+            print(f"Error processing peka model {model_name}: {str(e)}")
     
     # 计算patches模型的互信息
     for model_name in model_paths['patches']:
@@ -407,14 +411,34 @@ def main(dataset_root: str,
     print("\nMutual Information Results:")
     print(df.to_string())
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Compare mutual information between scLLM embeddings and model embeddings")
+    parser.add_argument('--project_root', type=str, default=os.path.dirname(REPO_ROOT),
+                        help='Folder that contains the PEKA checkout (defaults to its parent)')
+    parser.add_argument('--tissue_type', type=str, required=True,
+                        help='Type of tissue (e.g., breast, other_cancer)')
+    parser.add_argument('--dataset_name', type=str, required=True,
+                        help='Name of the dataset (e.g., breast_visium_26k)')
+    parser.add_argument('--embedder_name', type=str, default="scFoundation",
+                        help='Name of the scLLM model')
+    parser.add_argument('--checkpoint_name', type=str, default="default_model",
+                        help='Name of the scLLM checkpoint')
+    parser.add_argument('--output_dir', type=str, default=".",
+                        help='Directory to write the results CSV into')
+    parser.add_argument('--output_file', type=str, default="mi_results.csv",
+                        help='Name of the results CSV')
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    # Example usage
+    args = parse_args()
+    dataset_root = os.path.join(args.project_root, "PEKA", "DATA",
+                                args.tissue_type, args.dataset_name)
+    os.makedirs(args.output_dir, exist_ok=True)
     main(
-        #dataset_root="/home/pan/Experiments/EXPs/2025_HistoMIL2_workspace/HistoMIL2/DATA/breast/breast_visium_26k",
-        #dataset_root="/home/pan/Experiments/EXPs/2025_HistoMIL2_workspace/HistoMIL2/DATA/other_cancer/kidney_in_hest",
-        #dataset_root="/home/pan/Experiments/EXPs/2025_HistoMIL2_workspace/HistoMIL2/DATA/other_cancer/liver_in_hest",
-        dataset_root="/home/pan/Experiments/EXPs/2025_HistoMIL2_workspace/HistoMIL2/DATA/other_cancer/lung_in_hest",
-        embedder_name="scFoundation",
-        checkpoint_name="default_model",
-        output_file="mi_results.csv"
+        dataset_root=dataset_root,
+        embedder_name=args.embedder_name,
+        checkpoint_name=args.checkpoint_name,
+        output_file=os.path.join(args.output_dir, args.output_file)
     )

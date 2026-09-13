@@ -1,4 +1,4 @@
-_target_: histomil2.Hydra_helper.model_part_helpers.model_config
+_target_: peka.Hydra_helper.model_part_helpers.model_config
 encoder_name: hf-hub:MahmoodLab/UNI
 encoder_output_dim: 1024
 translate_module_name: MLP

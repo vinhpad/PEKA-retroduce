@@ -1,4 +1,4 @@
-_target_: histomil2.Hydra_helper.model_part_helpers.model_config
+_target_: peka.Hydra_helper.model_part_helpers.model_config
 encoder_name: hf-hub:bioptimus/H-optimus-0
 encoder_output_dim: 1536
 translate_module_name: Transformer

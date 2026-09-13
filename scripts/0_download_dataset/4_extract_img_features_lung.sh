@@ -2,6 +2,8 @@
 
 script_dir=$(dirname "$(readlink -f "$0")")
 PROJECT_ROOT=$(dirname "$(dirname "$(dirname "$script_dir")")")
+# the python entry points resolve the project layout from their working directory
+cd "$script_dir"
 echo "PROJECT_ROOT: $PROJECT_ROOT"
 
 DATASET_ROOT=$PROJECT_ROOT/PEKA/DATA/

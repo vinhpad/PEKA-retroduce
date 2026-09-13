@@ -1,4 +1,4 @@
-_target_: histomil2.Hydra_helper.dataset_part_helpers.dataset_generator
+_target_: peka.Hydra_helper.dataset_part_helpers.dataset_generator
 data_root: ???
 tissue_name: other_cancer
 task: lung_in_hest

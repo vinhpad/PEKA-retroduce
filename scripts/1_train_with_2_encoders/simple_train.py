@@ -28,7 +28,7 @@ import peka
 import dotenv
 dotenv.load_dotenv(env_file_path)
 WANDB_API_KEY = os.getenv("WANDB_API_KEY")
-
+WANDB_ENTITY = os.getenv("WANDB_ENTITY")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 from huggingface_hub import login
@@ -40,7 +40,6 @@ login(token=HF_TOKEN)
 # specify the dataset name and path
 tissue_type = "breast" # or "other_cancer"
 database_name = "breast_visium_26k" # breast_xenium_100k etc.
-database_path = f"{data_root}/{tissue_type}/"
 model_name = "scFoundation"
 
 #   load configs 
@@ -55,8 +54,8 @@ print("🚀 Loading Zen Configs for default settings...")
 dataset_config_loc = f"{all_configs_path}/Datasets/{database_name}_{model_name}.yaml"
 dataset_config_zen = load_from_yaml(dataset_config_loc)
 
-model_config_loc = f"{all_configs_path}/Models/H-optimus-0_LoRA_MLP.yaml"
-#model_config_loc = f"{all_configs_path}/Models/H-optimus-0_LoRA_Transformer.yaml"
+image_model_name = "H-optimus-0_LoRA_MLP"
+model_config_loc = f"{all_configs_path}/Models/{image_model_name}.yaml"
 model_config_zen = load_from_yaml(model_config_loc)
 
 optimizers_config_loc = f"{all_configs_path}/Optimizers/default.yaml"
@@ -70,14 +69,14 @@ print("🚀 Instantiating Trainer...")
 trainer_instance = instantiate(trainer_config_zen,
                                 # Basic configurations
         
-        entity="shipan_work",
-        exp_name="PEKA_scMulan",
+        entity=WANDB_ENTITY,
+        exp_name=f"PEKA_{database_name}_{model_name}",
         task_type="regression",
 
         class_nb=1,  # 将类型声明为 Optional[int]
 
         # 模型
-        model_name="H-optimus-0_LoRA_Transformer",
+        model_name=image_model_name,
         ckpt_folder=ckpt_folder,
 
         # Model and training components
@@ -93,7 +92,7 @@ trainer_instance = instantiate(trainer_config_zen,
 
 # instantiate dataset, model, and optimizer
 print("🚀 Instantiating dataset, model, and optimizer...")
-train_loader,val_loader,target_dim = instantiate(dataset_config_zen, data_root=database_path)
+train_loader,val_loader,target_dim = instantiate(dataset_config_zen, data_root=data_root)
 model = instantiate(model_config_zen, target_dim=target_dim)
 optimizer_instance_list, scheduler_instance_list, metrics_factory, loss_instance = instantiate(optimizers_config_zen)
 # instantiate model

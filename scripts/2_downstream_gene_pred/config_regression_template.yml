@@ -1,4 +1,5 @@
-project_root: "/home/pan/Experiments/EXPs/2025_HistoMIL2_workspace/HistoMIL2"  # Path to HistoMIL2 project
+# Path to the folder that CONTAINS the PEKA checkout (scripts resolve <project_root>/PEKA/...)
+project_root: "/path/to/workspace"
 tissue_type: "breast"  # Tissue type (e.g., breast, other_cancer)
 dataset_name: "breast_visium_26k"  # Dataset name under the tissue type directory
 embedder_name: "scFoundation"  # Name of the scLLM model

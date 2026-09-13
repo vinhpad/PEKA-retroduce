@@ -75,7 +75,9 @@ def train_phase_2(
     metrics_factory,
     loss_instance,
     trainer_config,
-    pl_model_config
+    pl_model_config,
+    exp_name,
+    model_name,
 ):
     """Phase 2: Train LoRA model with knowledge distillation"""
     print(f" Phase 2: Training LoRA model with knowledge distillation...")
@@ -98,22 +100,22 @@ def train_phase_2(
     kd_model.setup_teacher_model(teacher_classifier)
     
     # create trainer
+    # everything not supplied here (max_epochs, clip_grad, checkpoint format, ...)
+    # comes from the trainer config, so the yaml stays the single source of truth
     trainer = instantiate(trainer_config,
         # Basic configurations
         entity=WANDB_ENTITY,
-        exp_name=get_args().exp_name,
+        exp_name=exp_name,
         task_type="classification",
         class_nb=pl_model_config.num_classes,
-        
+
         # model
-        model_name="H-optimus-0_LoRA_MLP",
+        model_name=model_name,
         ckpt_folder=ckpt_folder,
-        
+
         # Model and training components
-        max_epochs=20,
         trainer_output_dir=output_dir,
-        additional_pl_paras={},
-        
+
         # logging
         wandb_api_key=WANDB_API_KEY,
     )
@@ -303,7 +305,7 @@ def main():
     print(" Loading Zen Configs...")
     dataset_config = load_from_yaml(os.path.join(all_configs_path, args.dataset_config))
     model_config = load_from_yaml(os.path.join(all_configs_path, args.model_config))
-    optimizers_config_zen = load_from_yaml(os.path.join(all_configs_path, "Optimizers/kd_lora.yaml"))
+    optimizers_config_zen = load_from_yaml(os.path.join(all_configs_path, args.optimizer_config))
     trainer_config = load_from_yaml(os.path.join(all_configs_path, args.trainer_config))
     pl_model_config = load_from_yaml(os.path.join(all_configs_path, "PL_Model/kd_lora.yaml"))
     
@@ -317,7 +319,7 @@ def main():
     config_files = {
         'dataset': os.path.join(all_configs_path, args.dataset_config),
         'model': os.path.join(all_configs_path, args.model_config),
-        'optimizer': os.path.join(all_configs_path, "Optimizers/kd_lora.yaml"),
+        'optimizer': os.path.join(all_configs_path, args.optimizer_config),
         'trainer': os.path.join(all_configs_path, args.trainer_config),
         'pl_model': os.path.join(all_configs_path, "PL_Model/kd_lora.yaml")
     }
@@ -390,7 +392,9 @@ def main():
         metrics_factory=metrics_factory,
         loss_instance=loss_instance,
         trainer_config=trainer_config,
-        pl_model_config=pl_model_config
+        pl_model_config=pl_model_config,
+        exp_name=args.exp_name,
+        model_name=os.path.splitext(os.path.basename(args.model_config))[0],
     )
 
 if __name__ == "__main__":

@@ -8,19 +8,24 @@ def get_module(module_name, input_dim, output_dim, additional_params:Optional[Li
 
 
     if module_name == 'MLP':
+        # additional_params is None for the default configs, so mid_dim needs a
+        # fallback here rather than being left unbound
+        mid_dim = 512
         if additional_params is not None:
-            mid_dim = additional_params.get('mid_dim', 512)
+            mid_dim = additional_params.get('mid_dim', mid_dim)
         return nn.Sequential(
             nn.Linear(input_dim, mid_dim),
             nn.ReLU(),
             nn.Linear(mid_dim, output_dim)
         )
     elif module_name == 'Transformer':
-        # a transformer module
+        # a transformer module; peft_method belongs to the PEFT config, not to nn.Transformer
+        transformer_params = dict(additional_params) if additional_params is not None else {}
+        transformer_params.pop('peft_method', None)
         return nn.Sequential(
                             nn.Transformer(
                                 d_model=input_dim,
-                                **additional_params
+                                **transformer_params
                         ),
                         nn.Linear(input_dim, output_dim)
                         )

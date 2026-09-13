@@ -11,6 +11,9 @@ args = argparse.ArgumentParser()
 args.add_argument("--project_root", type=str, default='./') #project folder
 args.add_argument("--database_root", type=str, default='./PEKA/DATA/' ) # processed database storage folder
 args.add_argument('--datasets_predefine', type=str, default="peka_breast_datasets.csv" )
+args.add_argument('--dataset_names', nargs='*', default=None,
+                  help='Only build these sub-datasets (default: every row of the predefine CSV). '
+                       'Use this when you downloaded only part of HEST1k.')
 
 
 print("🤖 running 2_peka_dataset_generator.py")
@@ -25,7 +28,7 @@ if __name__ == "__main__":
     sys.path.append(proj_path)
     sys.path.append(proj_path + "/PEKA/")
     # add external models path
-    external_module_path = str(proj_path) + "/PEKA/External_models/"
+    external_module_path = str(proj_path) + "/PEKA/peka/External_models/"
     sys.path.append(external_module_path)
     print(f" ⭐️ external_module_path: {external_module_path}")
     sys.path.append(external_module_path + "/HEST/src/")
@@ -48,6 +51,14 @@ if __name__ == "__main__":
 
     datasets_info = check_database_status(data_root, hest_storage_path, 
                                           dataset_predefine = dataset_predefine)
+
+    available = [list(d.keys())[0] for d in datasets_info]
+    if args.dataset_names:
+        unknown = set(args.dataset_names) - set(available)
+        if unknown:
+            raise ValueError(f"Unknown dataset name(s): {sorted(unknown)}. Available: {available}")
+        datasets_info = [d for d in datasets_info if list(d.keys())[0] in args.dataset_names]
+    print(f" ⭐️ building {[list(d.keys())[0] for d in datasets_info]} (available: {available})")
 
     for dataset_info in datasets_info:
         dataset_name = list(dataset_info.keys())[0]

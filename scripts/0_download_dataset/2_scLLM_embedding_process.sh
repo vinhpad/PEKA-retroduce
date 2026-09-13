@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # dynamic get project root, because script location is fixed, but project root is not fixed
-export PROJECT_ROOT=$(dirname $(dirname $(dirname $(pwd))))
+script_dir=$(dirname "$(readlink -f "$0")")
+export PROJECT_ROOT=$(dirname "$(dirname "$(dirname "$script_dir")")")
 
 # set dataset name
 export DATASET_NAME="breast_visium_26k"  # set dataset name

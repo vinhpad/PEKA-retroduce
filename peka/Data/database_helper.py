@@ -2,7 +2,7 @@ import pandas as pd
 import shutil
 import os
 
-from peka import logger
+from peka import logger, WORKSPACE_DIR
 from peka.Data.hest1k_helper import HEST1K_sub_database
 
 
@@ -52,7 +52,7 @@ def create_hest1k_sub_database_instance(csv_file_path, dataset_name,
     return dataset
 
 def check_database_status(data_root, hest_storage_path, 
-                          dataset_predefine: str = "histomil2_breast_datasets.csv"):
+                          dataset_predefine: str = "peka_breast_datasets.csv"):
     target_csv_path = f"{data_root}/dataset_config.csv"
     copy_flag = False
     logger.info(f" 🤖 check database status in {data_root}")
@@ -60,10 +60,18 @@ def check_database_status(data_root, hest_storage_path,
     if not os.path.exists(target_csv_path):
         logger.info(f" 🤖 dataset_config.csv not found in {data_root},copy it...")
         copy_flag = True
-        proj_path = os.getenv("PROJECT_PATH")
-        logger.info(f" 🤖 read source data root: {proj_path}\n    and use sub-datamodules data_root: {data_root}")
-        source_csv_path = f"{proj_path}/HistoMIL2/hydra_zen/Configs/Datasets/{dataset_predefine}"
+        # Resolve the predefined dataset CSV relative to this checkout instead of
+        # relying on PROJECT_PATH being exported, which silently pointed at the old
+        # HistoMIL2 layout.
+        logger.info(f" 🤖 read source data root: {WORKSPACE_DIR}\n    and use sub-datamodules data_root: {data_root}")
+        source_csv_path = f"{WORKSPACE_DIR}/hydra_zen/Configs/Datasets/{dataset_predefine}"
+        if not os.path.exists(source_csv_path):
+            raise FileNotFoundError(
+                f"Predefined dataset config not found: {source_csv_path}. "
+                f"Expected one of the CSV files in {WORKSPACE_DIR}/hydra_zen/Configs/Datasets/"
+            )
         # Copy the file from source to target
+        os.makedirs(data_root, exist_ok=True)
         shutil.copyfile(source_csv_path, target_csv_path)
         logger.info(f"🤖 Copied dataset configuration from {source_csv_path} \n    to {target_csv_path}")
 
@@ -123,7 +131,7 @@ def get_preprocess_status(data_root,dataset_name:str,scLLM_emb_name:str=None):
         # Number of h5ad files
         align_gene_name_adata = len([f for f in os.listdir(align_adata_folder) if f.endswith('.h5ad')])
         if align_gene_name_csv != align_gene_name_adata:
-            logger.error(f"Gene name alignment not consistent, please delete current file and re-run 1_generate_histomil2_datasets.sh .")
+            logger.error(f"Gene name alignment not consistent, please delete current file and re-run 1_generate_peka_datasets_*.sh .")
             align_gene_name = None
         else:
             align_gene_name = align_gene_name_csv
@@ -137,7 +145,7 @@ def get_preprocess_status(data_root,dataset_name:str,scLLM_emb_name:str=None):
         extract_patches_h5 = len([f for f in os.listdir(extract_patches_folder) if f.endswith('.h5')])
         extract_patches_png = len([f for f in os.listdir(extract_patches_folder) if f.endswith('.png')])
         if extract_patches_h5 != extract_patches_png:
-            logger.error(f" 🤖 extract_patches not consistent, please delete current file and re-run 1_generate_histomil2_datasets.sh .")
+            logger.error(f" 🤖 extract_patches not consistent, please delete current file and re-run 1_generate_peka_datasets_*.sh .")
             extract_patches = None
         else:
             extract_patches = extract_patches_h5

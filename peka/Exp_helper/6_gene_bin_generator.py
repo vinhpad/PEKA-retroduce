@@ -80,7 +80,7 @@ def process_adata_file(adata_path, bin_nb,
                       hvg_json=None, n_top_hvg=200, hvg_flavor='seurat', batch_key=None):
     """Process a single adata file and create binned version"""
 
-    from peka.Data.utils import calcuate_hvg, aggregate_duplicate_genes, generate_binned_adata
+    from peka.Data.utils import calculate_hvg, aggregate_duplicate_genes, generate_binned_adata
     print(f"Processing {adata_path}")
     
     # Read original adata

@@ -4,7 +4,6 @@ import scanpy as sc
 import anndata as ad
 from pathlib import Path
 from scipy.sparse import issparse
-from peka.Data.utils import calculate_hvg
 import numpy as np
 import json
 def process_anndata_folder(input_dir: str, output_dir: str, output_filename: str, batch_key: str, n_top_hvg: int = 50):

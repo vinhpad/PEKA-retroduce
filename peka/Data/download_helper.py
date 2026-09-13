@@ -106,6 +106,54 @@ def download_hest1k(hest_storage_path, hf_token=None, chose_ver:str="dataset"):
             patterns='*'
         )
 
+
+def hest_ids_on_disk(hest_storage_path, sample_ids):
+    """Split sample_ids into (already downloaded, still missing) by their .h5ad."""
+    st_folder = os.path.join(hest_storage_path, "st")
+    present, missing = [], []
+    for sample_id in sample_ids:
+        if os.path.exists(os.path.join(st_folder, f"{sample_id}.h5ad")):
+            present.append(sample_id)
+        else:
+            missing.append(sample_id)
+    return present, missing
+
+
+def download_hest1k_subset(hest_storage_path, sample_ids, hf_token=None,
+                           index_pattern="HEST_v*.csv"):
+    """Download only the listed HEST1k samples.
+
+    The full HEST1k release is roughly 1TB; the four benchmarks used in the paper need
+    about a tenth of that, so pulling per-sample files keeps the download manageable.
+    Follows the file-pattern convention used by HEST itself: every artifact of a sample
+    (st/, wsis/, metadata/, patches/, *_seg/, ...) is named `<id>.<ext>` or `<id>_<...>`.
+    """
+    from huggingface_hub import snapshot_download, login
+
+    if not sample_ids:
+        logger.warning("🤖 no sample ids requested, nothing to download.")
+        return hest_storage_path
+
+    os.makedirs(hest_storage_path, exist_ok=True)
+    if hf_token:
+        login(token=hf_token)
+    else:
+        logger.warning("Warning: HF_TOKEN is not set, download may fail for gated files.")
+
+    allow_patterns = [f"*{sample_id}[_.]**" for sample_id in sample_ids]
+    if index_pattern:
+        allow_patterns.append(index_pattern)
+
+    logger.info(f"🤖 downloading {len(sample_ids)} HEST1k samples into {hest_storage_path}")
+    snapshot_download(
+        repo_id="MahmoodLab/hest",
+        repo_type="dataset",
+        local_dir=hest_storage_path,
+        allow_patterns=allow_patterns,
+    )
+    logger.info(f"🤖 subset download finished: {hest_storage_path}")
+    return hest_storage_path
+
 #################################################################################################################
 #
 #################################################################################################################
