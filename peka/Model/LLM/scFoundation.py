@@ -17,6 +17,13 @@ from scipy.sparse import issparse
 from anndata import AnnData
 
 from peka.External_models.scFoundation.model.pretrainmodels.select_model import select_model
+
+# torch.OutOfMemoryError only exists from torch 2.5; torch.cuda.OutOfMemoryError is older
+_OOM_ERRORS = tuple(
+    err for err in (getattr(torch, "OutOfMemoryError", None),
+                    getattr(torch.cuda, "OutOfMemoryError", None))
+    if err is not None
+) or (RuntimeError,)
 def convertconfig(ckpt):
     newconfig = {}
     newconfig['config']={}
@@ -294,26 +301,39 @@ class scFoundation_embedder(scLLM_QC_preprocess):
                 value_nums = value_labels.sum(1)
                 max_num = max(value_nums)
                 if max_num >2:
-                    x, x_padding = gatherData(pretrain_gene_x, value_labels, self.pretrainconfig['pad_token_id'])
-                    #print(f" data shape in x {x.shape}and x_padding {x_padding.shape}")
-                    #Cell embedding
-                    position_gene_ids, _ = gatherData(data_gene_ids, value_labels, self.pretrainconfig['pad_token_id'])
-                    x = self.pretrainmodel.token_emb(torch.unsqueeze(x, 2).float(), output_weight = 0)
-                    position_emb = self.pretrainmodel.pos_emb(position_gene_ids)
-                    #print(f" before pos+x x shape {x.shape} and pos {position_emb.shape}")
-                    x += position_emb
-                    geneemb = self.pretrainmodel.encoder(x,x_padding)
-                    #print(f" get geneemb shape {geneemb.shape}")
-                    geneemb1 = geneemb[:,-1,:]
-                    geneemb2 = geneemb[:,-2,:]
-                    geneemb3, _ = torch.max(geneemb[:,:-2,:], dim=1)
-                    geneemb4 = torch.mean(geneemb[:,:-2,:], dim=1)
-                    if pool_type=='all':
-                        geneembmerge = torch.concat([geneemb1,geneemb2,geneemb3,geneemb4],axis=1)
-                    elif pool_type=='max':
-                        geneembmerge, _ = torch.max(geneemb, dim=1)
-                    else:
-                        raise ValueError('pool_type must be all or max')
+                    def _encode_spot():
+                        x, x_padding = gatherData(pretrain_gene_x, value_labels, self.pretrainconfig['pad_token_id'])
+                        #Cell embedding
+                        position_gene_ids, _ = gatherData(data_gene_ids, value_labels, self.pretrainconfig['pad_token_id'])
+                        x = self.pretrainmodel.token_emb(torch.unsqueeze(x, 2).float(), output_weight = 0)
+                        position_emb = self.pretrainmodel.pos_emb(position_gene_ids)
+                        x += position_emb
+                        geneemb = self.pretrainmodel.encoder(x,x_padding)
+                        geneemb1 = geneemb[:,-1,:]
+                        geneemb2 = geneemb[:,-2,:]
+                        geneemb3, _ = torch.max(geneemb[:,:-2,:], dim=1)
+                        geneemb4 = torch.mean(geneemb[:,:-2,:], dim=1)
+                        if pool_type=='all':
+                            return torch.concat([geneemb1,geneemb2,geneemb3,geneemb4],axis=1)
+                        elif pool_type=='max':
+                            merged, _ = torch.max(geneemb, dim=1)
+                            return merged
+                        else:
+                            raise ValueError('pool_type must be all or max')
+
+                    # Attention is O(L^2) in the number of expressed genes, and a Visium
+                    # spot pools ~10 cells, so L can reach ~10k -- far beyond what this
+                    # single-cell model normally sees. One oversized spot used to kill the
+                    # whole slide; free the cache and retry it once instead.
+                    try:
+                        geneembmerge = _encode_spot()
+                    except _OOM_ERRORS:
+                        logger.warning(
+                            f" 🤖 OOM on spot {i} (L={int(max_num)} expressed genes); "
+                            f"emptying CUDA cache and retrying"
+                        )
+                        torch.cuda.empty_cache()
+                        geneembmerge = _encode_spot()
                     geneexpemb.append(geneembmerge.detach().cpu().numpy())
                 else:
                     # A spot with <=2 expressed genes cannot go through gatherData.
