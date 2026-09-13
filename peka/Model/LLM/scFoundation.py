@@ -43,7 +43,14 @@ def convertconfig(ckpt):
     return newconfig
 
 def load_model_frommmf(best_ckpt_path, key='gene'):
-    model_data = torch.load(best_ckpt_path,map_location='cpu')
+    # weights_only defaults to True from torch 2.6 onward, which refuses this checkpoint:
+    # it stores a config dict alongside the tensors, not just state dicts.
+    model_data = torch.load(best_ckpt_path, map_location='cpu', weights_only=False)
+    if key not in model_data:
+        raise KeyError(
+            f"'{key}' not found in {best_ckpt_path}. Available modes: {sorted(model_data.keys())}. "
+            f"The mode comes from model_mode in support_files/scLLM_configs.csv."
+        )
     model_data = model_data[key]
     model_data = convertconfig(model_data)
     if not model_data.__contains__('config'):

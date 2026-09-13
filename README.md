@@ -7,7 +7,7 @@ PEKA is a novel framework that teaches pathology foundation models to accurately
 - [Environment Setup](#environment-setup)
 - [Project Structure](#project-structure)
 - [Step-by-Step Experimental Guide](#step-by-step-experimental-guide)
-  - [Prerequisite: scFoundation checkpoints](#prerequisite-scfoundation-checkpoints)
+  - [Prerequisite: scFoundation checkpoint](#prerequisite-scfoundation-checkpoint)
   - [Phase 0: Data Preparation](#phase-0-data-preparation)
   - [Phase 1: Model Training with Dual Encoders](#phase-1-model-training-with-dual-encoders)
   - [Phase 2: Downstream Gene Expression Prediction](#phase-2-downstream-gene-expression-prediction)
@@ -246,20 +246,61 @@ Every shell script derives `<project_root>` from its own location and `cd`s into
 directory, so `bash <script>.sh` works from anywhere. The Python entry points do **not**;
 run them from the folder documented in each step.
 
-### Prerequisite: scFoundation checkpoints
+### Prerequisite: scFoundation checkpoint
 
-Step 0.3 loads the scFoundation weights from disk — they are not downloaded automatically.
-Place them per tissue before running it:
+Step 0.3 loads scFoundation from `<project_root>/PEKA/DATA/<tissue>/Pretrained/scFoundation/`,
+where `<tissue>` is `breast` or `other_cancer`:
 
 ```
-<project_root>/PEKA/DATA/<tissue>/Pretrained/scFoundation/
-├── default_model.ckpt              # scFoundation pretrained weights
-└── OS_scRNA_gene_index.19264.tsv   # gene vocabulary (19,264 genes)
+DATA/<tissue>/Pretrained/scFoundation/
+├── default_model.ckpt              # pretrained weights      -- download manually
+└── OS_scRNA_gene_index.19264.tsv   # gene vocabulary          -- copied automatically
 ```
 
-`<tissue>` is `breast` or `other_cancer`. Both files come from the
-[scFoundation](https://github.com/biomap-research/scFoundation) release; the checkpoint
-name is registered in `support_files/scLLM_configs.csv`.
+The **gene vocabulary is resolved automatically** from the scFoundation submodule, so it
+only requires `git submodule update --init --recursive`.
+
+The **weights must be fetched separately** (1.33 GiB). The canonical source is the
+[scFoundation SharePoint folder](https://hopebio2020.sharepoint.com/:f:/s/PublicSharedfiles/IgBlEJ72TBE5Q76AmgXbgjXiAR69fzcrgzqgUYdSThPLrqk),
+which needs an interactive browser session. On a headless machine, the same file is
+mirrored on the Hugging Face Hub:
+
+```bash
+pip install -U "huggingface_hub[cli]"
+mkdir -p DATA/breast/Pretrained/scFoundation
+
+hf download genbio-ai/scFoundation models.ckpt \
+    --local-dir DATA/breast/Pretrained/scFoundation
+mv DATA/breast/Pretrained/scFoundation/models.ckpt \
+   DATA/breast/Pretrained/scFoundation/default_model.ckpt
+```
+
+Verify before use — both known mirrors (`genbio-ai/scFoundation` and the
+`jenny143/scFoundation-weight` dataset) resolve to the same bytes:
+
+```bash
+sha256sum DATA/breast/Pretrained/scFoundation/default_model.ckpt
+# 9f40bf324d3d0084c4b288d06f5af4fddd12206e2a3f022551d12e89e33a0ea9
+
+python -c "
+import torch
+d = torch.load('DATA/breast/Pretrained/scFoundation/default_model.ckpt',
+               map_location='cpu', weights_only=False)
+print('modes:', sorted(d.keys()))"   # expects 'gene' among them
+```
+
+The checkpoint holds several models keyed by mode (`gene`, `cell`, `rde`); PEKA selects
+`gene` via `model_mode="gene"` in `support_files/scLLM_configs.csv`, matching
+`--output_type gene` in scFoundation's own `get_embedding.py`.
+
+Because the path is per tissue, symlink rather than copy the multi-GB file when you run
+more than one organ:
+
+```bash
+mkdir -p DATA/other_cancer/Pretrained/scFoundation
+ln -s ../../../breast/Pretrained/scFoundation/default_model.ckpt \
+      DATA/other_cancer/Pretrained/scFoundation/default_model.ckpt
+```
 
 ---
 
@@ -732,9 +773,12 @@ PEKA uses Weights & Biases for experiment tracking. Ensure you have:
    - Run the Python entry points from the folder named in their step; only the shell
      wrappers are location independent
 
-3. **`FileNotFoundError` on `default_model.ckpt` / `OS_scRNA_gene_index.19264.tsv`**
+3. **`FileNotFoundError` on `default_model.ckpt`**
    - Step 0.3 needs the scFoundation weights placed manually — see
-     [Prerequisite: scFoundation checkpoints](#prerequisite-scfoundation-checkpoints)
+     [Prerequisite: scFoundation checkpoint](#prerequisite-scfoundation-checkpoint).
+     The error message prints the download link and the exact target path.
+   - If the message is about `OS_scRNA_gene_index.19264.tsv` instead, the submodule is not
+     initialized: `git submodule update --init --recursive`
 
 4. **Dataset Download Issues**
    - Check internet connection and `HEST1K_STORAGE_PATH` permissions
