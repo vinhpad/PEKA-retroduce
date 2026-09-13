@@ -286,6 +286,7 @@ class scFoundation_embedder(scLLM_QC_preprocess):
                                         tgthighres = "f1", # T=number (starting with 't'), fold change of high resolution which means T/S=number (starting with 'f'), 
                                                             # or addition of high resolution which means T=S+number (starting with 'a'). 
                                         pool_type = "all", # "max" max pooling, "all" all pooling
+                                        amp_dtype = torch.bfloat16, # scFoundation was trained at bf16; None forces fp32
                                         ):
         
         geneexpemb=[]
@@ -308,7 +309,14 @@ class scFoundation_embedder(scLLM_QC_preprocess):
                         x = self.pretrainmodel.token_emb(torch.unsqueeze(x, 2).float(), output_weight = 0)
                         position_emb = self.pretrainmodel.pos_emb(position_gene_ids)
                         x += position_emb
-                        geneemb = self.pretrainmodel.encoder(x,x_padding)
+                        # Attention is 12 heads x L^2; at L~11k that is ~6GB in fp32.
+                        # The model was pretrained at bf16 (trainer.params.precision=bf16),
+                        # so running it there halves the footprint at native precision.
+                        if amp_dtype is None:
+                            geneemb = self.pretrainmodel.encoder(x,x_padding)
+                        else:
+                            with torch.autocast(device_type="cuda", dtype=amp_dtype):
+                                geneemb = self.pretrainmodel.encoder(x,x_padding)
                         geneemb1 = geneemb[:,-1,:]
                         geneemb2 = geneemb[:,-2,:]
                         geneemb3, _ = torch.max(geneemb[:,:-2,:], dim=1)
@@ -325,16 +333,22 @@ class scFoundation_embedder(scLLM_QC_preprocess):
                     # spot pools ~10 cells, so L can reach ~10k -- far beyond what this
                     # single-cell model normally sees. One oversized spot used to kill the
                     # whole slide; free the cache and retry it once instead.
+                    geneembmerge = None
                     try:
                         geneembmerge = _encode_spot()
                     except _OOM_ERRORS:
+                        oom_len = int(max_num)
+                    if geneembmerge is None:
+                        # outside the except block the traceback is gone, so the failed
+                        # attempt's tensors are finally collectable
                         logger.warning(
-                            f" 🤖 OOM on spot {i} (L={int(max_num)} expressed genes); "
+                            f" 🤖 OOM on spot {i} (L={oom_len} expressed genes); "
                             f"emptying CUDA cache and retrying"
                         )
                         torch.cuda.empty_cache()
                         geneembmerge = _encode_spot()
-                    geneexpemb.append(geneembmerge.detach().cpu().numpy())
+                    # numpy has no bfloat16, so come back to fp32 before leaving the GPU
+                    geneexpemb.append(geneembmerge.detach().float().cpu().numpy())
                 else:
                     # A spot with <=2 expressed genes cannot go through gatherData.
                     # The original code reused `geneemb1` here, which is only bound inside
