@@ -115,7 +115,10 @@ def main():
         **optional_params
     )
     
-    embedder.run()
+    # FORCE_REPROCESS=1 re-embeds samples that already have a .npy;
+    # by default a partially failed run resumes and only retries what is missing
+    force = os.getenv("FORCE_REPROCESS", "").strip().lower() in ("1", "true", "yes")
+    embedder.run(force=force)
     embedder.valid_check()
 
 if __name__ == "__main__":

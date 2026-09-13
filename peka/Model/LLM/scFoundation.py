@@ -282,6 +282,7 @@ class scFoundation_embedder(scLLM_QC_preprocess):
                                         ):
         
         geneexpemb=[]
+        degenerate_rows = []   # spots with <=2 expressed genes, filled in after the loop
         gexpr_feature = convert_to_scFoundation_vocab_length(adata, self.gene_list)
         #Inference
         for i in range(gexpr_feature.shape[0]):
@@ -315,12 +316,30 @@ class scFoundation_embedder(scLLM_QC_preprocess):
                         raise ValueError('pool_type must be all or max')
                     geneexpemb.append(geneembmerge.detach().cpu().numpy())
                 else:
-                    if pool_type=='all':
-                        geneembmerge = torch.concat([geneemb1,geneemb1,geneemb1,geneemb1],axis=1)
-                    elif pool_type=='max':
-                        geneembmerge = geneemb1
-                    else:
-                        raise ValueError('pool_type must be all or max')
-                    geneexpemb.append(geneembmerge.detach().cpu().numpy())
+                    # A spot with <=2 expressed genes cannot go through gatherData.
+                    # The original code reused `geneemb1` here, which is only bound inside
+                    # the branch above: it raises NameError when the first spot is
+                    # degenerate, and silently copies another spot's embedding otherwise.
+                    # Emit an explicit zero vector instead, preserving row alignment
+                    # with ~filter_flag.
+                    logger.warning(
+                        f" 🤖 spot {i} has only {int(max_num)} expressed gene(s); "
+                        f"writing a zero embedding for it"
+                    )
+                    degenerate_rows.append(len(geneexpemb))
+                    geneexpemb.append(None)
+
+        if degenerate_rows:
+            width = next((e.shape[-1] for e in geneexpemb if e is not None), None)
+            if width is None:
+                raise ValueError(
+                    f"No spot in this sample had more than 2 expressed genes, so no "
+                    f"embedding could be produced. Check gene name alignment for "
+                    f"{getattr(adata, 'shape', '?')}."
+                )
+            for row in degenerate_rows:
+                geneexpemb[row] = np.zeros((1, width), dtype=np.float32)
+            logger.warning(f" 🤖 {len(degenerate_rows)} degenerate spot(s) zero-filled")
+
         geneexpemb = np.squeeze(np.array(geneexpemb))
         return geneexpemb

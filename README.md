@@ -11,6 +11,9 @@ PEKA is a novel framework that teaches pathology foundation models to accurately
   - [Phase 0: Data Preparation](#phase-0-data-preparation)
   - [Phase 1: Model Training with Dual Encoders](#phase-1-model-training-with-dual-encoders)
   - [Phase 2: Downstream Gene Expression Prediction](#phase-2-downstream-gene-expression-prediction)
+    - [Where the 5-fold actually is](#where-the-5-fold-actually-is)
+    - [Reading the 5-fold numbers](#reading-the-5-fold-numbers)
+    - [Flags that do not do what they look like](#flags-that-do-not-do-what-they-look-like)
   - [Complete Pipeline Execution](#complete-pipeline-execution)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
@@ -457,6 +460,9 @@ Run from `scripts/1_train_with_2_encoders`. Config paths are relative to
 `hydra_zen/Configs/`, and hyperparameters come from those YAMLs — the scripts do not
 override them.
 
+This phase uses a **single 80/20 train/val split** (`split_seed=42`), not cross-validation.
+The paper's 5-fold evaluation belongs to [Phase 2](#phase-2-downstream-gene-expression-prediction).
+
 #### Step 1.1: Knowledge Distillation with PEFT Training
 
 **Automated (recommended):** edit the variables at the top, then
@@ -543,18 +549,55 @@ python reproduce_kd_lora_experiment.py \
 
 ### Phase 2: Downstream Gene Expression Prediction
 
-Trains a per-gene regressor on top of frozen embeddings and compares feature sources with
-5-fold cross-validation. Run from `scripts/2_downstream_gene_pred`.
+This is where the paper's **5-fold cross-validation** happens. Run from
+`scripts/2_downstream_gene_pred`.
+
+#### Where the 5-fold actually is
+
+A frequent misreading: the folds are **not** part of KD training. The two phases split
+data differently, and only Phase 2 cross-validates.
+
+| | Phase 1 — `kd_lora_train.py` | Phase 2 — `step3_task_gene_expr_reg_KFold.py` |
+|---|---|---|
+| split | a **single** 80/20 split, `split_seed=42` | `KFold(n_splits=5, shuffle=True, random_state=2025)` |
+| trains | image encoder + PEFT adapter + translate head | one regressor **per gene** |
+| model | H-optimus-0 / UNI + LoRA·AdaLoRA·HRA·Bone | PCA(256) + Ridge |
+| runs | once | 5 folds × N genes |
+
+The encoder is distilled once; the folds apply only to the regressor sitting on top of
+frozen embeddings. This follows the HEST1k benchmark protocol (see the docstring of
+`peka/DownstreamTasks_helper/train_and_val_exp.py`).
+
+Per fold, with `N` usable spots for a gene:
+
+```
+N spots
+├── test   20%   ← held out, scored. The 5 test folds are disjoint and cover all N.
+└── rest   80%
+    ├── train  64%   ← what the regressor actually sees
+    └── val    16%   ← carved out but unused (Ridge has no early stopping)
+```
+
+Note the file also contains `train_and_val_step()`, a plain single 80/20 split with no
+folds. It is imported but never called — `step3_task_gene_expr_reg_KFold.py` always uses
+the K-fold variant.
+
+#### What each feature type needs
 
 `--project_root` is `<project_root>` as defined at the top of this guide — the folder that
-*contains* the `PEKA` checkout. `--feature_type` selects the embeddings to regress from:
+*contains* the `PEKA` checkout. `--feature_type` selects the embeddings to regress from.
 
-| `--feature_type` | source on disk |
-|---|---|
-| `scLLM` | `scLLM_embed/<embedder>/<ckpt>/embeddings/` — the teacher, an upper bound |
-| `image_encoder` | `patches_embed/<image_backbone>/` — the frozen baseline |
-| `peka` | `peka_embed/<image_encoder_name>/<embedder>/<ckpt>/` — the distilled student |
-| `image_encoder+peka` | both of the above, concatenated |
+**Every** feature type reads `scLLM_embed/<embedder>/<ckpt>/paired_seq/` — that is where
+the gene expression labels and the `filter_flag` QC mask live — plus `patches/` for the
+barcode intersection. So Step 0.3 is required even for the image-only baseline; there is
+no shortcut around the scFoundation checkpoint.
+
+| `--feature_type` | prerequisite steps | embedding source |
+|---|---|---|
+| `scLLM` | 0.2 + 0.3 | `scLLM_embed/<embedder>/<ckpt>/embeddings/` — the teacher, an upper bound |
+| `image_encoder` | 0.2 + 0.3 + 0.4 | `patches_embed/<image_backbone>/` — the frozen baseline |
+| `peka` | + Phase 1 + Step 2.3 | `peka_embed/<image_encoder_name>/<embedder>/<ckpt>/` — the distilled student |
+| `image_encoder+peka` | all of the above | both, concatenated |
 
 #### Step 2.1: Select the Gene List
 
@@ -607,36 +650,92 @@ python step2_inference_feature_vectors.py \
 
 #### Step 2.4: Gene Expression Regression with K-Fold Validation
 
-**Automated** — sweeps `{raw, binned} × {image_encoder, peka, scLLM, image_encoder+peka}`:
+The 5 folds run automatically — there is no flag to enable them.
+
+**Build up in stages** rather than waiting for a full pipeline; each rung produces real
+5-fold numbers and validates the machinery before the next one costs GPU time.
+
+*Rung 1 — right after Step 0.3, no training needed.* Regressing from the teacher
+embeddings gives the upper bound and proves Phase 2 works end to end:
 
 ```bash
-bash 2_auto_reg_KFold_auto_H0.sh    # H-optimus-0 student
-bash 2_auto_reg_KFold_auto_UNI.sh   # UNI student
-```
-
-**Manual — a single combination:**
-```bash
+cd scripts/2_downstream_gene_pred
 python step3_task_gene_expr_reg_KFold.py \
     --project_root /path/to/workspace \
     --tissue_type breast \
     --dataset_name breast_visium_26k \
     --embedder_name scFoundation \
     --image_encoder_name H0 \
-    --image_backbone H-optimus-0 \
-    --feature_type peka \
+    --feature_type scLLM \
     --gene_list_json top_50_genes_Visium_Homo_sapien_Breast_Cancer.json \
     --output_root ../../OUTPUT/breast/breast_visium_26k/raw \
-    --epochs 300 \
     --mask_zero_values
 ```
 
-`--image_backbone` names the folder under `patches_embed/` (`H-optimus-0` or `UNI`), while
-`--image_encoder_name` (`H0` / `UNI`) names the folder under `peka_embed/`. Add
-`--use_binned` to regress against Step 2.2's bins. Genes with fewer than 322 usable spots
-are skipped.
+*Rung 2 — after Step 0.4.* The frozen image-encoder baseline:
 
-Writes `<output_root>/<image_encoder_name>/<feature_type>_gene_level_<raw|binned>_regression_<embedder>/`
-containing `gene_regression_results.csv`, `ckpt/` and `plots/`.
+```bash
+python step3_task_gene_expr_reg_KFold.py \
+    --project_root /path/to/workspace \
+    --tissue_type breast --dataset_name breast_visium_26k \
+    --embedder_name scFoundation --image_encoder_name H0 \
+    --image_backbone H-optimus-0 \
+    --feature_type image_encoder \
+    --gene_list_json top_50_genes_Visium_Homo_sapien_Breast_Cancer.json \
+    --output_root ../../OUTPUT/breast/breast_visium_26k/raw \
+    --mask_zero_values
+```
+
+*Rung 3 — after Phase 1 and Step 2.3.* The paper's headline result; swap
+`--feature_type peka` or `image_encoder+peka` into the command above, or sweep everything:
+
+```bash
+bash 2_auto_reg_KFold_auto_H0.sh    # H-optimus-0 student
+bash 2_auto_reg_KFold_auto_UNI.sh   # UNI student
+```
+
+Each script runs `{raw, binned} × {image_encoder, peka, scLLM, image_encoder+peka}`, i.e.
+8 five-fold sweeps. Set `BINNED_OPTIONS=(false)` at the top to skip the binned half if
+Step 2.2 has not been run.
+
+`--image_backbone` names the folder under `patches_embed/` (`H-optimus-0` or `UNI`), while
+`--image_encoder_name` (`H0` / `UNI`) names the folder under `peka_embed/`.
+
+#### Reading the 5-fold numbers
+
+Results land in
+`<output_root>/<image_encoder_name>/<feature_type>_gene_level_<raw|binned>_regression_<embedder>/`
+as `gene_regression_results.csv` (plus `ckpt/` and `plots/`). One row per gene; for each of
+`mse`, `pearson_correlation`, `cosine_similarity`, `kl_divergence` there is a `_mean` and a
+`_std` **across the 5 folds**. The number to compare against the paper is
+`pearson_correlation_mean`.
+
+```bash
+python -c "
+import pandas as pd, glob
+for f in sorted(glob.glob('../../OUTPUT/breast/breast_visium_26k/raw/*/*/gene_regression_results.csv')):
+    d = pd.read_csv(f)
+    print(f.split('/raw/')[1])
+    print('  PCC 5-fold: %.4f ± %.4f  (%d genes)' % (
+        d.pearson_correlation_mean.mean(), d.pearson_correlation_std.mean(), len(d)))
+"
+```
+
+#### Flags that do not do what they look like
+
+- **`--epochs` is a no-op.** `train_regressor()` fits PCA + Ridge in closed form; there is
+  no training loop, and `epochs`/`patience` are dead variables. The `--epochs 300` in the
+  sweep scripts changes nothing.
+- **`--with_independent_test_set` is a no-op.** `step3` stores it in its `config` dict but
+  never passes it to `train_and_val_step_KFold`, so the function's own default (`True`)
+  always wins — which is why each fold trains on 64% rather than 80%. The held-out test
+  fold is unaffected, so the reported scores are valid 5-fold scores, just from a smaller
+  training set.
+- **`Ksplit=5` is hard-coded** in `step3_task_gene_expr_reg_KFold.py`; there is no CLI flag
+  for a different number of folds.
+- **Genes with 321 or fewer usable spots are skipped entirely** and never appear in the
+  CSV. With `--mask_zero_values`, spots where the gene reads zero are dropped first, so the
+  usable count is per gene — this is why a 50-gene list can yield fewer than 50 rows.
 
 #### Step 2.5: Analysis and Visualization
 

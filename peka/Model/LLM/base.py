@@ -1,4 +1,5 @@
 import os
+import traceback
 import pandas as pd
 import scanpy as sc
 import numpy as np
@@ -72,12 +73,23 @@ class scLLM_QC_preprocess:
         logger.info(f" 🤖 base class model related embed infer step for {adata.filename} empty step..")
         return embed_array
 
-    def run(self,**kwargs):
+    def run(self, force: bool = False, **kwargs):
+        """Embed every sub-sample.
+
+        Args:
+            force: re-embed samples whose .npy already exists. Default False, so a run
+                   that failed part way through resumes instead of redoing everything.
+            **kwargs: forwarded to model_related_embed_infer_step
+        """
         self.current_idx = 0
         self.not_processed_idx = []
         for idx in tqdm(range(len(self.dataset_index_df)),desc=" 🤖 processing subdataset"):
             self.current_idx = idx
             adata_loc = f"{self.align_adata_folder}/HEST_breast_adata_{idx}.h5ad"
+            embed_loc = f"{self.embeddings_folder}/HEST_breast_adata_{idx}.npy"
+            if not force and os.path.exists(embed_loc):
+                logger.info(f" 🤖 {idx}th sample already embedded, skip (use force=True to redo)")
+                continue
             try:
                 adata = sc.read_h5ad(adata_loc)
                 adata, filter_flag = self.model_related_qc_step(adata) 
@@ -87,7 +99,10 @@ class scLLM_QC_preprocess:
                 embed_array = self.model_related_embed_infer_step(adata_filtered,**kwargs)
                 np.save(f"{self.embeddings_folder}/HEST_breast_adata_{idx}.npy",embed_array)
             except Exception as e:
-                logger.error(f"[Error]!!! processing {idx}th sample: {e}")
+                # str(e) alone loses the origin of the failure, which matters when only
+                # a couple of slides out of many fail
+                logger.error(f"[Error]!!! processing {idx}th sample: {type(e).__name__}: {e}")
+                logger.error(f"[Traceback] {idx}th sample:\n{traceback.format_exc()}")
                 self.not_processed_idx.append(idx)
                 continue
             else:
