@@ -73,7 +73,28 @@ PEKA addresses the challenge of predicting gene expression patterns from histopa
     pip install faiss-gpu
    ```
 
-3. **Configure Environment Variables**
+3. **Pin the fragile dependencies**
+
+   Almost nothing in this stack declares an upper version bound, so a plain
+   `pip install -U <anything>` can silently walk numpy, numba, pyarrow or peft out of the
+   range the pipeline needs — and the breakage shows up at runtime, far from the install.
+   `constraints.txt` at the repo root records every such bound:
+
+   ```bash
+   pip install -c constraints.txt -U <package>     # always cap installs with it
+   pip check                                       # must stay silent
+   ```
+
+   | pin | why |
+   |---|---|
+   | `numpy==1.26.4` | numba 0.60 wants <1.27; cudf-cu12 24.6 wants <2.0 |
+   | `numba==0.60.0`, `llvmlite==0.43.0` | newer numba mistypes numpy 1.26 ufuncs inside scanpy |
+   | `pyarrow==16.1.0`, `datasets<5` | cudf-cu12 24.6 caps pyarrow <16.2; datasets 5 needs >=21 |
+   | `peft>=0.14.0,<0.19` | `BoneConfig` — the paper's adapter — exists only in this range |
+   | `transformers<5` | HEST is written against the 4.x API |
+   | `opencv-python<=4.11.0.86` | 4.12 requires numpy>=2 |
+
+4. **Configure Environment Variables**
    ```bash
    # Copy environment template
    cp .env.example .env
@@ -90,7 +111,7 @@ PEKA addresses the challenge of predicting gene expression patterns from histopa
    HEST1K_STORAGE_PATH=/path/to/hest1k/storage
    ```
 
-4. **Initialize Project Configuration**
+5. **Initialize Project Configuration**
    ```bash
    cd /REPO_LOCATION/PEKA/scripts/0_download_dataset
    bash 0_config_and_download.sh

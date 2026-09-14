@@ -45,7 +45,8 @@ def generate_binned_adata(adata_with_hvg, bin_nb):
     
     # Get expression data
     layer_data = _get_obs_rep(adata_with_hvg, layer=None)
-    layer_data = layer_data.A if issparse(layer_data) else layer_data
+    # .A is gone on newer scipy sparse arrays / anndata view wrappers, .toarray() works on both
+    layer_data = layer_data.toarray() if issparse(layer_data) else np.asarray(layer_data)
     
     if layer_data.min() < 0:
         raise ValueError(f"Assuming non-negative data, but got min value {layer_data.min()}.")

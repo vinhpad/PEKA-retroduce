@@ -1,0 +1,38 @@
+# Hard version constraints for the PEKA environment.
+#
+# Use as a cap on every install so pip cannot silently walk a dependency out of range:
+#     pip install -c constraints.txt <package>
+#
+# Each line below exists because violating it breaks the pipeline at runtime, not at
+# install time -- most of these packages declare no upper bound of their own.
+
+# --- numpy / numba -----------------------------------------------------------------
+# numba 0.60 supports numpy 1.22-<1.27 (or exactly 2.0); cudf-cu12 24.6 caps numpy <2.0.
+# The intersection is numpy 1.26.x. A newer numba (e.g. 0.67) type-checks numpy 1.26
+# ufuncs badly and blows up inside scanpy with a bare AttributeError.
+numpy==1.26.4
+numba==0.60.0
+llvmlite==0.43.0
+
+# --- RAPIDS-imposed ----------------------------------------------------------------
+# cudf-cu12 24.6 requires pyarrow<16.2, which in turn caps datasets: 5.x demands
+# pyarrow>=21, every release up to 4.0.0 is happy with >=15.
+pyarrow==16.1.0
+# datasets 4.0.0 is the LAST release that accepts pyarrow>=15; 4.1.0 onward demands >=21,
+# so "datasets<5" is not a tight enough cap.
+datasets==4.0.0
+
+# --- PEFT --------------------------------------------------------------------------
+# The PEKA paper's adapter is Bone (Block-Affine). BoneConfig exists only in
+# peft 0.14.0-0.18.0; peft 0.19 removed it in favour of MiSS, which the release notes
+# describe as an "improved replacement" -- i.e. a different method, not a rename.
+peft>=0.14.0,<0.19
+
+# --- HuggingFace stack -------------------------------------------------------------
+# HEST is written against transformers 4.x (its pyproject asks for >=4.40.2 with no cap).
+transformers<5
+
+# --- OpenCV ------------------------------------------------------------------------
+# opencv-python 4.12.0.88 onward requires numpy>=2 on py>=3.9, which contradicts numpy
+# 1.26. 4.11.0.86 is the last release that still allows numpy 1.x.
+opencv-python==4.11.0.86
