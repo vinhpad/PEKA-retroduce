@@ -1,7 +1,7 @@
 _target_: peka.Hydra_helper.dataset_part_helpers.dataset_generator
 data_root: ???
 tissue_name: other_cancer
-task: kidney_in_hest
+task: kidney_visium_74k
 scLLM_emb_name: scFoundation
 scLLM_emb_prefix: ""
 scLLM_emb_ckpt: default_model

@@ -9,7 +9,7 @@ echo "PROJECT_ROOT: $PROJECT_ROOT"
 DATASET_ROOT=$PROJECT_ROOT/PEKA/DATA/
 echo "DATASET_ROOT: $DATASET_ROOT"
 
-subdataset_folder="${PROJECT_ROOT}/PEKA/DATA/other_cancer/kidney_in_hest/" # need to prepare before
+subdataset_folder="${PROJECT_ROOT}/PEKA/DATA/other_cancer/kidney_visium_74k/" # need to prepare before
 echo "subdataset_folder: $subdataset_folder"
 
 # H-optimus-0

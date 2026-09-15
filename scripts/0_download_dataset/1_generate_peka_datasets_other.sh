@@ -9,7 +9,7 @@ DATABASE_ROOT="${PROJECT_ROOT}/PEKA/DATA/other_cancer/"
 DATABASE="peka_other_datasets.csv"
 # Which sub-datasets of $DATABASE to build. Leave empty to build every row of the CSV,
 # which requires the corresponding WSIs to have been downloaded first.
-DATASET_NAMES="kidney_in_hest liver_in_hest lung_in_hest"
+DATASET_NAMES="kidney_visium_74k liver_visium_37k lung_visium_65k"
 echo "PROJECT_ROOT: $PROJECT_ROOT"
 echo "DATABASE_ROOT: $DATABASE_ROOT"
 echo "DATASET_NAMES: ${DATASET_NAMES:-<all>}"

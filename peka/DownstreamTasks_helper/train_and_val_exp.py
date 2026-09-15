@@ -258,8 +258,15 @@ def train_and_val_step(embeddings,labels,
 
 def train_and_val_step_KFold(embeddings,labels,
                     output_dir,gene, 
-                    config,with_independent_test_set=True,
+                    config,with_independent_test_set=False,
                     Ksplit=5,epochs=200,):
+    """Plain K-fold: each fold trains on (K-1)/K of the data, as the paper's
+    "5-fold cross-validation" implies.
+
+    with_independent_test_set=True carves a further 20% validation split out of the
+    training fold. Nothing consumes it — train_regressor fits PCA+Ridge in closed form
+    and returns that model unconditionally — so it only shrinks the training set.
+    """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     

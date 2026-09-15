@@ -42,7 +42,7 @@ import dotenv
 import argparse
 
 # the four benchmarks reported in the paper
-PAPER_DATASETS = ["breast_visium_26k", "kidney_in_hest", "liver_in_hest", "lung_in_hest"]
+PAPER_DATASETS = ["breast_visium_26k", "kidney_visium_74k", "liver_visium_37k", "lung_visium_65k"]
 
 
 def get_args():

@@ -40,7 +40,11 @@ def get_latest_version_hest_index(hest_loc, prefix="HEST_", extension=".csv"):
     return os.path.join(hest_loc, latest_file), latest_file
 
 def get_hest_db_index(hest_loc, hest_db_index_prefix=HEST_DB_INDEX_PREFIX):
-    file_loc, file_name = get_latest_version_hest_index(hest_loc, prefix=hest_db_index_prefix)
+    # search on the generic "HEST_" stem, not on HEST_DB_INDEX_PREFIX: the latter is a full
+    # filename, so passing it as the prefix made get_latest_version_hest_index blind to every
+    # newer index (HEST_v1_2_0.csv, HEST_v1_3_0.csv, ...) sitting in hest_loc, which then fell
+    # back to copying the bundled v1.1.0 over them.
+    file_loc, file_name = get_latest_version_hest_index(hest_loc)
     if file_loc is None:
         # Copy from repo using prefix
         logger.info(f"Copying {hest_db_index_prefix} from repo to {hest_loc}")

@@ -10,9 +10,17 @@ cd "$script_dir"
 # let it reuse them instead
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-# Dataset configuration components
-TISSUE_TYPE="breast"
-DATASET_NAME="${TISSUE_TYPE}_visium_26k"
+# Which benchmark to distil. One run per dataset; the paper trains all four.
+# Default is breast only, because each run is ~12 GPU hours (paper, one V100).
+#   DATASET=kidney bash train_kd_lora.sh
+DATASET="${DATASET:-breast}"
+case "$DATASET" in
+    breast) TISSUE_TYPE="breast";       DATASET_NAME="breast_visium_26k" ;;
+    kidney) TISSUE_TYPE="other_cancer"; DATASET_NAME="kidney_visium_74k" ;;
+    liver)  TISSUE_TYPE="other_cancer"; DATASET_NAME="liver_visium_37k" ;;
+    lung)   TISSUE_TYPE="other_cancer"; DATASET_NAME="lung_visium_65k" ;;
+    *) echo "unknown DATASET '$DATASET' (breast|kidney|liver|lung)" >&2; exit 1 ;;
+esac
 SCLLM="scFoundation"
 GEN_LABEL="clustered100"
 

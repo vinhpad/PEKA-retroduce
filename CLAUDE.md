@@ -112,8 +112,11 @@ specific knobs (`target_r`, `init_r`, `apply_GS`, `init_weights`, …) are read 
    Loss = `alpha * KL(soft, T=temperature) + (1-alpha) * CrossEntropy(hard labels)`.
    Both phases require the loss to be `CrossEntropyLoss` (`pl_model_helpers.create_pl_model` asserts this).
 
-`on_save_checkpoint` is overridden: when `lora_save_path` is set it saves **adapter weights via
-`save_pretrained` plus `translate_model.pth`**, and does *not* write a normal Lightning checkpoint.
+`on_save_checkpoint` is overridden: when `lora_save_path` is set it *additionally* saves
+**adapter weights via `save_pretrained` plus `translate_model.pth`** into `OUTPUT/<exp>_<ts>/phase2/lora/`.
+The hook runs inside Lightning's own save, so `ModelCheckpoint` still writes the full `.ckpt`
+under `Pretrained/<exp_name>/` — and that `.ckpt` is what Step 2.3 loads
+(`step2_inference_feature_vectors.py` reads `checkpoint['state_dict']`; the `lora/` folder has no such key).
 
 **Dataset** (`peka/Data/dataset_helper.py::BatchLocalityDataset`). Samples are keyed by barcode
 across three stores: `.h5ad` paired sequences, `.npy` embeddings, `.h5` patches. It keeps one file
@@ -149,9 +152,16 @@ That helper shares `select_hest_ids` with `construct_sub_dataset_index`, so the 
 set and the set the pipeline later indexes cannot drift apart — if you change a
 definition CSV, both follow.
 
-Sizes against the 1,229-WSI index: `--paper_only` (breast_visium_26k, kidney_in_hest,
-liver_in_hest, lung_in_hest) = 107 WSI; all defined sub-datasets = 224 WSI; `--mode full`
-= the whole ~1TB release. Samples are skipped when `st/<id>.h5ad` already exists, so
+All four paper benchmarks are declared `platform = Visium`, `species = Homo sapiens`,
+which is what reproduces the paper's sample counts (breast 30,414 / kidney 73,813 /
+liver 37,168 / lung 64,728 tiles). Note that only breast and kidney are cancer-only —
+kidney via `oncotree_code = SCCRCC`, breast because every human Visium breast sample in
+HEST1k is IDC/ILC. Liver and lung include healthy/diseased/treated samples; restricting
+them to cancer would leave 2 WSI each and would not match the paper.
+
+Sizes against the 1,229-WSI index: `--paper_only` (breast_visium_26k 8, kidney_visium_74k 24,
+liver_visium_37k 14, lung_visium_65k 37) = 83 WSI; all defined sub-datasets = 200 WSI;
+`--mode full` = the whole ~1TB release. Samples are skipped when `st/<id>.h5ad` already exists, so
 widening the selection later only fetches the difference.
 
 ## Gotchas that are still live
@@ -170,4 +180,13 @@ widening the selection later only fetches the difference.
 - `model_part_helpers.model_config` calls `.get()` on `translate_additional_params`, so that
   field must be a mapping in YAML. `get_module` additionally accepts the `ListConfig`
   list-of-dicts form, but `model_config` would fail on it first.
+- Phase 2 runs **plain 5-fold**: `step3_task_gene_expr_reg_KFold.py` now forwards
+  `--with_independent_test_set` (it used to drop it, letting the callee's `True` default
+  shrink every fold's training set from 4/5 to 0.8x0.8 = 64%). Default is off, matching the
+  paper. Results produced before this fix are not comparable with results after it.
+- The Phase 2 sweeps (`2_auto_reg_KFold_auto_{H0,UNI}.sh`) and Step 2.3
+  (`1b_inference_peka_features.sh`) iterate all four benchmarks and **skip** datasets whose
+  data or checkpoint is missing, printing a reason. `DATASETS`, `FEATURE_TYPES` and
+  `BINNED_OPTIONS` override from the environment; binned is off by default since the paper
+  reports raw expression only.
 - There is still no test suite; verification means running a pipeline stage.

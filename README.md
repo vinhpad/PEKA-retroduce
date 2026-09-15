@@ -119,17 +119,17 @@ PEKA addresses the challenge of predicting gene expression patterns from histopa
 
    By default this downloads **only the HEST1k samples the benchmarks need** rather than
    the full ~1TB release. The four datasets reported in the paper (breast / kidney /
-   liver / lung) come to 107 of the 1,229 WSIs, roughly a tenth of the download. Edit
+   liver / lung) come to 83 of the 1,229 WSIs, well under a tenth of the download. Edit
    `DOWNLOAD_MODE`, `PAPER_ONLY` and `DRY_RUN` at the top of the script, or call the
    downloader directly:
    ```bash
    # see what would be fetched, without downloading
    python ../../peka/Exp_helper/1_dataset_downloader.py --paper_only --dry_run
 
-   # only the four benchmarks from the paper (107 WSI)
+   # only the four benchmarks from the paper (83 WSI)
    python ../../peka/Exp_helper/1_dataset_downloader.py --paper_only
 
-   # every sub-dataset defined in hydra_zen/Configs/Datasets/peka_*.csv (224 WSI)
+   # every sub-dataset defined in hydra_zen/Configs/Datasets/peka_*.csv (200 WSI)
    python ../../peka/Exp_helper/1_dataset_downloader.py --mode subset
 
    # a single benchmark
@@ -347,8 +347,8 @@ reported in the paper. Sizes measured against the 1,229-WSI HEST1k index:
 
 | selection | flag | WSI |
 |---|---|---|
-| the four paper benchmarks | `--paper_only` | 107 |
-| every sub-dataset in `peka_*_datasets.csv` | `--mode subset` (default) | 224 |
+| the four paper benchmarks | `--paper_only` | 83 |
+| every sub-dataset in `peka_*_datasets.csv` | `--mode subset` (default) | 200 |
 | the complete HEST1k release (~1TB) | `--mode full` | 1,229 |
 
 Edit `DOWNLOAD_MODE` / `PAPER_ONLY` / `DRY_RUN` at the top of the script, or call the
@@ -364,13 +364,64 @@ python ../../peka/Exp_helper/1_dataset_downloader.py --mode full
 Samples already on disk are skipped, so re-running is cheap and the selection can be
 widened later (start with breast, add the other organs afterwards).
 
-> **Note on `platform`.** The paper describes the benchmarks as Visium ST only, but
-> `peka_other_datasets.csv` declares `platform = Xenium Visium Spatial_Transcriptomics`
-> for liver/lung/kidney. `breast_visium_26k` (30,543 spots) and `kidney_in_hest`
-> (74,220 spots) already match the paper's 30,414 / 73,813 counts; liver and lung do not,
-> because the Xenium slides are pulled in as well. Set `platform` to `Visium` in that CSV
-> to reproduce the paper's selection — the downloader reads the same file, so the download
-> shrinks to 83 WSI accordingly.
+> **Note on `platform`.** All four benchmarks are **Visium, Homo sapiens**, so
+> `peka_*_datasets.csv` declares `platform = Visium` for every one of them. This is what
+> reproduces the paper's sample counts; the four rows resolve to 83 WSI against the
+> 1,229-WSI HEST1k index:
+>
+> | dataset | HEST selection | WSI | paper n |
+> |---|---|---|---|
+> | `breast_visium_26k` | Breast + Visium | 8 | 30,414 |
+> | `kidney_visium_74k` | Kidney + Visium + `oncotree_code=SCCRCC` | 24 | 73,813 |
+> | `liver_visium_37k` | Liver + Visium | 14 | 37,168 |
+> | `lung_visium_65k` | Lung + Visium | 37 | 64,728 |
+>
+> Earlier revisions declared `Xenium Visium Spatial_Transcriptomics` for liver/lung/kidney,
+> which pulled the Xenium slides in as well (107 WSI). Kidney was unaffected — its SCCRCC
+> samples are all Visium — which is why only liver and lung counts moved.
+>
+> **`liver_visium_37k` and `lung_visium_65k` are not cancer-only.** Section 3.1 of the paper
+> describes all four as cancer ("Visium ST data of Homo Sapiens with breast cancer
+> (n=30,414 ...), kidney cancer (n=73,813), liver cancer (n=37,168), and lung cancer
+> (n=64,728)"), but HEST1k cannot supply that. Counting *every* human sample with
+> `disease_state = Cancer`, on every platform — an absolute ceiling — liver has 3 WSI /
+> 8,252 spots and lung 4 WSI / 17,558. The paper needs 4.5x and 3.7x those ceilings, so no
+> oncological filter reproduces its counts; only the organ-level Visium slices do.
+>
+> The authors' own definitions agree with the numbers rather than with the prose: in the
+> first committed `peka_other_datasets.csv`, `oncotree_code` is empty for liver and lung and
+> set only for kidney (`SCCRCC`). Breast and kidney *are* cancer-only, but as a consequence
+> of their definitions rather than a disease filter — every human Visium breast sample in
+> HEST1k is IDC or ILC. So describe these two benchmarks as human Visium liver / lung with
+> mixed disease state (liver: 2 Cancer, 9 Diseased, 3 Healthy; lung: 2 Cancer, 23 Treated,
+> 1 Diseased, 11 Healthy), not as cancer cohorts.
+>
+> There is no `disease_state` filter in `select_hest_ids`; add `oncotree_code` per row if
+> you want a strictly oncological subset — and expect 2 WSI per organ, which is too small
+> to train on and is not what the paper ran.
+>
+> **Index version.** Every count above is against `support_files/HEST_v1_1_0.csv`, the index
+> bundled with this repo and the newest one published on the HEST GitHub. HuggingFace also
+> ships `HEST_v1_1_1`, `HEST_v1_2_0`, `HEST_v1_2_1` and `HEST_v1_3_0`, which add samples —
+> so the same definitions resolve to *more* WSI there. `get_hest_db_index` picks the
+> highest-numbered `HEST_*.csv` present in `HEST1K_STORAGE_PATH` and only falls back to the
+> bundled copy when the folder has none, so dropping a newer index in is enough to switch.
+> To see what that changes before committing to it:
+>
+> ```bash
+> # the HEST repo is gated — accept the terms once, then use your HF_TOKEN
+> curl -L -H "Authorization: Bearer $HF_TOKEN" \
+>   -o $HEST1K_STORAGE_PATH/HEST_v1_3_0.csv \
+>   https://huggingface.co/datasets/MahmoodLab/hest/resolve/main/HEST_v1_3_0.csv
+>
+> python peka/Exp_helper/8_dataset_definition_checker.py \
+>   --index support_files/HEST_v1_1_0.csv \
+>   --index $HEST1K_STORAGE_PATH/HEST_v1_3_0.csv
+> ```
+>
+> It prints WSI + spot counts per definition side by side and lists which sample IDs each
+> version adds or drops. Switching index mid-project changes the sample set a dataset
+> resolves to, so rebuild any dataset folder built against the old one.
 
 #### Step 0.2: Generate PEKA Datasets
 
@@ -379,7 +430,7 @@ gene names against Ensembl.
 
 ```bash
 bash 1_generate_peka_datasets_breast.sh   # breast_visium_26k
-bash 1_generate_peka_datasets_other.sh    # kidney_in_hest, liver_in_hest, lung_in_hest
+bash 1_generate_peka_datasets_other.sh    # kidney_visium_74k, liver_visium_37k, lung_visium_65k
 ```
 
 `DATASET_NAMES` at the top of each script picks which rows of the predefine CSV to build;
@@ -407,7 +458,7 @@ export SCLLM_EMBEDDER_NAME="scFoundation"
 
 Produces `scLLM_embed/scFoundation/default_model/{paired_seq,embeddings}/` and a
 `meta.csv` recording the embedding dimension and sample count. Repeat for every dataset
-(`kidney_in_hest`, `liver_in_hest`, `lung_in_hest` with `TISSUE_TYPE=other_cancer`).
+(`kidney_visium_74k`, `liver_visium_37k`, `lung_visium_65k` with `TISSUE_TYPE=other_cancer`).
 
 #### Step 0.4: Extract Image Features
 
@@ -497,7 +548,7 @@ bash train_kd_lora.sh
 cd scripts/1_train_with_2_encoders
 python kd_lora_train.py \
     --dataset_config Datasets/breast_visium_26k_scFoundation_with_clustered100_label.yaml \
-    --model_config Models/H-optimus-0_LoRA_MLP.yaml \
+    --model_config Models/H-optimus-0_Bone_MLP.yaml \
     --optimizer_config Optimizers/kd_lora.yaml \
     --trainer_config Trainers/kd_lora.yaml \
     --exp_name "breast_kd_lora_exp1"
@@ -526,7 +577,7 @@ Step 0.5 is not required — use a dataset config **without** `_with_clustered10
 ```bash
 python kd_lora_train_with_cluster.py \
     --dataset_config Datasets/breast_visium_26k_scFoundation.yaml \
-    --model_config Models/H-optimus-0_LoRA_MLP.yaml \
+    --model_config Models/H-optimus-0_Bone_MLP.yaml \
     --optimizer_config Optimizers/kd_lora.yaml \
     --trainer_config Trainers/kd_lora.yaml \
     --exp_name "breast_kd_lora_cluster_exp1"
@@ -541,15 +592,18 @@ OUTPUT/kd_lora_<dataset>_<timestamp>/
 Pretrained/<exp_name>/<epoch>-<metric>.ckpt               # best Lightning checkpoint
 ```
 
-Note that phase 2 saves **adapter weights via `save_pretrained` plus `translate_model.pth`**
-rather than a plain Lightning checkpoint whenever `lora_save_path` is set.
+Both are written. `on_save_checkpoint` is overridden so that, when `lora_save_path` is set,
+phase 2 *also* dumps **adapter weights via `save_pretrained` plus `translate_model.pth`**
+into `phase2/lora/`; the hook runs inside Lightning's own save, so `ModelCheckpoint` still
+writes the full `.ckpt` under `Pretrained/`. Step 2.3 needs that `.ckpt` — it reads
+`checkpoint['state_dict']`, which `phase2/lora/` does not contain.
 
 #### Step 1.2: Model Inference
 
 ```bash
 python kd_lora_inference.py \
     --dataset_config Datasets/breast_visium_26k_scFoundation_with_clustered100_label.yaml \
-    --model_config Models/H-optimus-0_LoRA_MLP.yaml \
+    --model_config Models/H-optimus-0_Bone_MLP.yaml \
     --trainer_config Trainers/kd_lora.yaml \
     --checkpoint_path ../../Pretrained/<exp_name>/<best>.ckpt \
     --output_dir ../../OUTPUT/inference_results
@@ -654,20 +708,38 @@ Runs the trained student over the patches. Required for `--feature_type peka` an
 `peka_embed/<image_encoder_name>/<embedder>/<ckpt>`.
 
 ```bash
+cd scripts/2_downstream_gene_pred
+bash 1b_inference_peka_features.sh                 # every benchmark that has a checkpoint
+DATASETS="breast" bash 1b_inference_peka_features.sh
+IMAGE_ENCODER_NAME=UNI MODEL_CONFIG=Models/UNI_Bone_MLP.yaml \
+    bash 1b_inference_peka_features.sh             # the UNI student
+```
+
+The wrapper picks the newest `.ckpt` in `Pretrained/KD_LoRA_<tissue>_<dataset>_scFoundation_clustered100/`,
+reads `lora_r` out of the model config and `target_scllm_dim` out of an existing scLLM
+embedding, writes to the exact path the loader expects, and then **counts the `.npy` files
+it produced** — `step2_inference_feature_vectors.py` swallows save errors and skips indices
+whose patch `.h5` is missing, yet still prints `Inference completed successfully`.
+
+Datasets without data or without a checkpoint are skipped with a reason, so running it
+after training breast alone is safe. To call the entry point directly instead:
+
+```bash
 python step2_inference_feature_vectors.py \
     --project_root /path/to/workspace \
-    --tissue_type breast \
-    --dataset_name breast_visium_26k \
-    --scllm scFoundation \
-    --scllm_ckpt default_model \
+    --tissue_type breast --dataset_name breast_visium_26k \
+    --scllm scFoundation --scllm_ckpt default_model \
     --image_encoder_name H0 \
-    --model_config Models/H-optimus-0_LoRA_MLP.yaml \
+    --model_config Models/H-optimus-0_Bone_MLP.yaml \
     --model_checkpoint ../../Pretrained/<exp_name>/<best>.ckpt \
-    --lora_r 256 \
+    --lora_r 256 --target_scllm_dim <scLLM embedding width> \
     --output_dir ../../DATA/breast/breast_visium_26k/peka_embed/H0/scFoundation/default_model
 ```
 
-`--lora_r` must match the `lora_r` of the model config the checkpoint was trained with.
+`--model_config` must be the config the checkpoint was trained with (Bone for PEKA itself),
+and `--lora_r` must match that config's `lora_r`. `--model_checkpoint` is the Lightning
+`.ckpt` under `Pretrained/`, **not** `OUTPUT/<exp>_<ts>/phase2/lora/` — the loader reads
+`checkpoint['state_dict']`, which the adapter folder does not have.
 
 #### Step 2.4: Gene Expression Regression with K-Fold Validation
 
@@ -715,9 +787,17 @@ bash 2_auto_reg_KFold_auto_H0.sh    # H-optimus-0 student
 bash 2_auto_reg_KFold_auto_UNI.sh   # UNI student
 ```
 
-Each script runs `{raw, binned} × {image_encoder, peka, scLLM, image_encoder+peka}`, i.e.
-8 five-fold sweeps. Set `BINNED_OPTIONS=(false)` at the top to skip the binned half if
-Step 2.2 has not been run.
+Each script sweeps `{breast, kidney, liver, lung} × {image_encoder, peka, scLLM,
+image_encoder+peka}` on raw expression — the paper reports no binned variant. A dataset
+with no `DATA/` folder, and a feature type whose embeddings are not on disk, are skipped
+with a reason rather than crashing, so this is safe to run after building breast only.
+Override from the environment:
+
+```bash
+DATASETS="breast" bash 2_auto_reg_KFold_auto_H0.sh
+FEATURE_TYPES="peka" bash 2_auto_reg_KFold_auto_H0.sh
+BINNED_OPTIONS="false true" bash 2_auto_reg_KFold_auto_H0.sh   # adds the binned half (needs Step 2.2)
+```
 
 `--image_backbone` names the folder under `patches_embed/` (`H-optimus-0` or `UNI`), while
 `--image_encoder_name` (`H0` / `UNI`) names the folder under `peka_embed/`.
@@ -747,11 +827,14 @@ for f in sorted(glob.glob('../../OUTPUT/breast/breast_visium_26k/raw/*/*/gene_re
 - **`--epochs` is a no-op.** `train_regressor()` fits PCA + Ridge in closed form; there is
   no training loop, and `epochs`/`patience` are dead variables. The `--epochs 300` in the
   sweep scripts changes nothing.
-- **`--with_independent_test_set` is a no-op.** `step3` stores it in its `config` dict but
-  never passes it to `train_and_val_step_KFold`, so the function's own default (`True`)
-  always wins — which is why each fold trains on 64% rather than 80%. The held-out test
-  fold is unaffected, so the reported scores are valid 5-fold scores, just from a smaller
-  training set.
+- **`--with_independent_test_set` now works, and defaults to off.** It used to be dropped
+  on the floor — `step3` stored it in its `config` dict and never passed it on, so the
+  callee's own default (`True`) always won and every fold trained on 0.8 x 0.8 = 64% of the
+  data instead of the 4/5 that "5-fold cross-validation" means. It is forwarded now and the
+  default is plain 5-fold, which is the paper's protocol. Passing the flag restores the
+  extra 20% validation carve-out, but nothing consumes it: `train_regressor` fits PCA+Ridge
+  in closed form and returns that model unconditionally, so it only shrinks training data.
+  **Numbers produced before this fix are not comparable with numbers produced after it.**
 - **`Ksplit=5` is hard-coded** in `step3_task_gene_expr_reg_KFold.py`; there is no CLI flag
   for a different number of folds.
 - **Genes with 321 or fewer usable spots are skipped entirely** and never appear in the
@@ -833,12 +916,7 @@ bash train_kd_lora.sh
 # --- Phase 2: Gene Prediction ---
 cd ../2_downstream_gene_pred
 bash 1_generate_labels_breast.sh       # only needed for the binned variant
-python step2_inference_feature_vectors.py \
-    --project_root /path/to/workspace --tissue_type breast \
-    --dataset_name breast_visium_26k --scllm scFoundation --scllm_ckpt default_model \
-    --image_encoder_name H0 --model_config Models/H-optimus-0_LoRA_MLP.yaml \
-    --model_checkpoint ../../Pretrained/<exp_name>/<best>.ckpt --lora_r 256 \
-    --output_dir ../../DATA/breast/breast_visium_26k/peka_embed/H0/scFoundation/default_model
+bash 1b_inference_peka_features.sh      # step 2.3, every benchmark with a checkpoint
 bash 2_auto_reg_KFold_auto_H0.sh
 python 3_compare_mutual_information.py \
     --project_root /path/to/workspace --tissue_type breast \
@@ -850,7 +928,8 @@ python 4_plot_gene_correlation.py \
 
 For the other cancer types: use `1_generate_peka_datasets_other.sh`,
 `4_extract_img_features_{kidney,liver,lung}.sh`, set `TISSUE_TYPE=other_cancer` and
-`DATASET_NAME=<kidney|liver|lung>_in_hest` in Steps 0.3 and 0.5, and use the matching
+`DATASET_NAME` to `kidney_visium_74k` / `liver_visium_37k` / `lung_visium_65k` in
+Steps 0.3 and 0.5, and use the matching
 `Datasets/<dataset>_scFoundation*.yaml` config in Phase 1.
 
 ## Configuration

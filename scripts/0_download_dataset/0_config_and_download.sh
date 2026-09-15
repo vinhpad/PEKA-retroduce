@@ -15,7 +15,7 @@ EXTERNAL_MODELS_ROOT="${PROJECT_ROOT}/PEKA/peka/External_models/"
 #   full    -> mirror the entire HEST1k release (~1TB)
 DOWNLOAD_MODE="subset"
 # Restrict further to the four benchmarks reported in the paper
-# (breast_visium_26k, kidney_in_hest, liver_in_hest, lung_in_hest)
+# (breast_visium_26k, kidney_visium_74k, liver_visium_37k, lung_visium_65k)
 PAPER_ONLY=true
 # Set to true to inspect what would be downloaded without fetching anything
 DRY_RUN=false

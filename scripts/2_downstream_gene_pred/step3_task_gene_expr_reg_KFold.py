@@ -157,6 +157,10 @@ def main():
             result = train_and_val_step_KFold(embeddings, labels,
                                     output_dir,gene, 
                                     config,
+                                    # was never forwarded, so the callee's own default (True)
+                                    # always won and every fold trained on 0.8 x 0.8 = 64%
+                                    # of the data instead of the 4/5 that "5-fold CV" means
+                                    with_independent_test_set=config['with_independent_test_set'],
                                     Ksplit=5,
                                     epochs=args.epochs)
 
