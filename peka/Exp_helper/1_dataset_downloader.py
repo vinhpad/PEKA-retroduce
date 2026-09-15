@@ -51,7 +51,7 @@ def get_args():
                         help="'subset' downloads only the samples the predefined "
                              "sub-datasets need (default); 'full' mirrors all of HEST1k (~1TB).")
     parser.add_argument('--datasets_predefine', nargs='+',
-                        default=["peka_breast_datasets.csv", "peka_other_datasets.csv"],
+                        default=["peka_datasets.csv"],
                         help='Predefine CSVs under hydra_zen/Configs/Datasets/ that '
                              'describe which sub-datasets exist.')
     parser.add_argument('--dataset_names', nargs='*', default=None,

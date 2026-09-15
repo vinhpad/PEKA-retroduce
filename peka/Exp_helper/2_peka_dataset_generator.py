@@ -10,7 +10,7 @@ import argparse
 args = argparse.ArgumentParser()
 args.add_argument("--project_root", type=str, default='./') #project folder
 args.add_argument("--database_root", type=str, default='./PEKA/DATA/' ) # processed database storage folder
-args.add_argument('--datasets_predefine', type=str, default="peka_breast_datasets.csv" )
+args.add_argument('--datasets_predefine', type=str, default="peka_datasets.csv" )
 args.add_argument('--dataset_names', nargs='*', default=None,
                   help='Only build these sub-datasets (default: every row of the predefine CSV). '
                        'Use this when you downloaded only part of HEST1k.')

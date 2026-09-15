@@ -234,7 +234,7 @@ def collect_required_hest_ids(hest_loc, dataset_predefine_list=None, dataset_nam
         (sorted list of ids, {dataset_name: id count})
     """
     if dataset_predefine_list is None:
-        dataset_predefine_list = ["peka_breast_datasets.csv", "peka_other_datasets.csv"]
+        dataset_predefine_list = ["peka_datasets.csv"]
 
     index_loc, _ = get_hest_db_index(hest_loc)
     meta_df = pd.read_csv(index_loc)

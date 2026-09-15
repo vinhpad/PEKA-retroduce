@@ -129,7 +129,7 @@ PEKA addresses the challenge of predicting gene expression patterns from histopa
    # only the four benchmarks from the paper (83 WSI)
    python ../../peka/Exp_helper/1_dataset_downloader.py --paper_only
 
-   # every sub-dataset defined in hydra_zen/Configs/Datasets/peka_*.csv (200 WSI)
+   # every sub-dataset defined in hydra_zen/Configs/Datasets/peka_datasets.csv (200 WSI)
    python ../../peka/Exp_helper/1_dataset_downloader.py --mode subset
 
    # a single benchmark
@@ -348,7 +348,7 @@ reported in the paper. Sizes measured against the 1,229-WSI HEST1k index:
 | selection | flag | WSI |
 |---|---|---|
 | the four paper benchmarks | `--paper_only` | 83 |
-| every sub-dataset in `peka_*_datasets.csv` | `--mode subset` (default) | 200 |
+| every sub-dataset in `peka_datasets.csv` | `--mode subset` (default) | 200 |
 | the complete HEST1k release (~1TB) | `--mode full` | 1,229 |
 
 Edit `DOWNLOAD_MODE` / `PAPER_ONLY` / `DRY_RUN` at the top of the script, or call the
@@ -365,7 +365,7 @@ Samples already on disk are skipped, so re-running is cheap and the selection ca
 widened later (start with breast, add the other organs afterwards).
 
 > **Note on `platform`.** All four benchmarks are **Visium, Homo sapiens**, so
-> `peka_*_datasets.csv` declares `platform = Visium` for every one of them. This is what
+> `peka_datasets.csv` declares `platform = Visium` for every one of them. This is what
 > reproduces the paper's sample counts; the four rows resolve to 83 WSI against the
 > 1,229-WSI HEST1k index:
 >
@@ -389,7 +389,8 @@ widened later (start with breast, add the other organs afterwards).
 > oncological filter reproduces its counts; only the organ-level Visium slices do.
 >
 > The authors' own definitions agree with the numbers rather than with the prose: in the
-> first committed `peka_other_datasets.csv`, `oncotree_code` is empty for liver and lung and
+> definition CSV as first committed (`peka_other_datasets.csv`, since merged into
+> `peka_datasets.csv`), `oncotree_code` is empty for liver and lung and
 > set only for kidney (`SCCRCC`). Breast and kidney *are* cancer-only, but as a consequence
 > of their definitions rather than a disease filter — every human Visium breast sample in
 > HEST1k is IDC or ILC. So describe these two benchmarks as human Visium liver / lung with
@@ -880,7 +881,7 @@ this repo. Values marked ✅ are already the shipped defaults.
 | λ₁=λ₂=0.5 (KD vs structure loss) | `PL_Model/kd_lora.yaml` | ✅ `alpha: 0.5` |
 | PCA(256) + Ridge, top-50 HVG, 5-fold | Phase 2 | ✅ |
 | scFoundation teacher | Step 0.3 | ✅ |
-| Visium ST only | `Datasets/peka_other_datasets.csv` | set `platform` to `Visium` (see Step 0.1 note) |
+| Visium ST only | `Datasets/peka_datasets.csv` | ✅ `platform: Visium` on all four (see Step 0.1 note) |
 
 **Bone requires `peft>=0.14.0`** — `BoneConfig` does not exist before that, and the error
 message from `model_part_helpers` says so. `pip install -U "peft>=0.14.0"`.

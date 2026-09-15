@@ -73,7 +73,7 @@ def main():
     ap.add_argument("--index", action="append", default=None,
                     help="HEST index CSV; repeat to compare versions (default: support_files/HEST_v1_1_0.csv)")
     ap.add_argument("--predefine", action="append",
-                    default=["peka_breast_datasets.csv", "peka_other_datasets.csv"])
+                    default=["peka_datasets.csv"])
     ap.add_argument("--paper_only", action="store_true", help="only the four paper benchmarks")
     args = ap.parse_args()
 

@@ -1,6 +1,6 @@
 # Sub-dataset definitions
 
-Rows of `peka_breast_datasets.csv` / `peka_other_datasets.csv`, resolved against
+Rows of `peka_datasets.csv`, resolved against
 `support_files/HEST_v1_1_0.csv` (1,229 WSI). The four marked ★ are the paper's benchmarks.
 
 | dataset_name | organ | oncotree_code | platform | WSI | spots (index) |

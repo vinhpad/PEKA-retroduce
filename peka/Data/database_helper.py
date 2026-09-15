@@ -52,7 +52,7 @@ def create_hest1k_sub_database_instance(csv_file_path, dataset_name,
     return dataset
 
 def check_database_status(data_root, hest_storage_path, 
-                          dataset_predefine: str = "peka_breast_datasets.csv"):
+                          dataset_predefine: str = "peka_datasets.csv"):
     target_csv_path = f"{data_root}/dataset_config.csv"
     copy_flag = False
     logger.info(f" 🤖 check database status in {data_root}")

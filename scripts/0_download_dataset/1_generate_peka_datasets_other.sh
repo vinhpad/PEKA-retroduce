@@ -6,7 +6,7 @@ PROJECT_ROOT=$(dirname "$(dirname "$(dirname "$script_dir")")")
 cd "$script_dir"
 DATABASE_ROOT="${PROJECT_ROOT}/PEKA/DATA/other_cancer/"
 
-DATABASE="peka_other_datasets.csv"
+DATABASE="peka_datasets.csv"
 # Which sub-datasets of $DATABASE to build. Leave empty to build every row of the CSV,
 # which requires the corresponding WSIs to have been downloaded first.
 DATASET_NAMES="kidney_visium_74k liver_visium_37k lung_visium_65k"

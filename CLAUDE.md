@@ -146,7 +146,8 @@ DATA/<tissue>/                       # breast | other_cancer
 ## HEST1K download scope
 
 `1_dataset_downloader.py` defaults to `--mode subset`: it reads the sub-dataset definitions
-in `hydra_zen/Configs/Datasets/peka_*.csv`, resolves them to HEST sample IDs through
+in `hydra_zen/Configs/Datasets/peka_datasets.csv` (the single definition file — the launcher
+scripts pick rows out of it with `--dataset_names`), resolves them to HEST sample IDs through
 `hest1k_helper.collect_required_hest_ids`, and `snapshot_download`s only those samples.
 That helper shares `select_hest_ids` with `construct_sub_dataset_index`, so the download
 set and the set the pipeline later indexes cannot drift apart — if you change a

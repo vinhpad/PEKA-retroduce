@@ -4,7 +4,7 @@ script_dir=$(dirname "$(readlink -f "$0")")
 PROJECT_ROOT=$(dirname "$(dirname "$(dirname "$script_dir")")")
 DATABASE_ROOT="${PROJECT_ROOT}/PEKA/DATA/breast/"
 
-DATABASE="peka_breast_datasets.csv"
+DATABASE="peka_datasets.csv"
 echo "PROJECT_ROOT: $PROJECT_ROOT"
 echo "DATABASE_ROOT: $DATABASE_ROOT"
 
