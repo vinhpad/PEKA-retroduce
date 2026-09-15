@@ -434,12 +434,35 @@ bash 1_generate_peka_datasets_breast.sh   # breast_visium_26k
 bash 1_generate_peka_datasets_other.sh    # kidney_visium_74k, liver_visium_37k, lung_visium_65k
 ```
 
-`DATASET_NAMES` at the top of each script picks which rows of the predefine CSV to build;
-it defaults to the paper benchmarks. Leave it empty to build every row — that requires the
-corresponding WSIs to have been downloaded first (`--mode subset`, not `--paper_only`).
+`DATASET_NAMES` at the top of each script picks which rows of `peka_datasets.csv` to build;
+it defaults to the paper benchmarks. That file holds every tissue while `DATABASE_ROOT`
+points at one of them (`DATA/breast/` or `DATA/other_cancer/`), so keep the list to rows of
+that tissue — leaving it empty builds all 7 rows into whichever folder the script targets.
+Building the extra breast sub-datasets also requires their WSIs to be on disk
+(`--mode subset`, not `--paper_only`).
 
 Produces, per dataset: `aligned_gene_name/`, `aligned_adata/`, `patches/`, plus the index
 `<dataset_name>.csv` and a `dataset_config.csv` tracking preprocessing state.
+
+**The Ensembl gene map is cached, not fetched every run.** `gene_name_alignment` needs a
+symbol <-> Ensembl-ID mapping; `support_files/ensembl_gene_map.tsv` ships one (Ensembl
+release 116, 49,131 IDs / 41,859 symbols), so alignment is deterministic and works offline.
+Delete that file to refresh it against the current release — `fetch_ensembl_gene_map`
+then queries `martservice` directly on `www` / `useast` / `asia`, validates the payload and
+rewrites the cache.
+
+This replaced the `biomart` package, which made the step fail in a way worth knowing about:
+a mirror that is down answers **HTTP 200 with an HTML "Service unavailable" page**, and
+`www.ensembl.org` 308-redirects to the current archive host during release transitions, so
+a down mirror surfaces as
+
+```
+xml.etree.ElementTree.ParseError: mismatched tag: line 85, column 2
+```
+
+from deep inside `biomart/dataset.py`. Status codes are not a usable health signal here;
+`fetch_ensembl_gene_map` checks whether the body is markup instead, moves on to the next
+mirror, and reports every mirror's failure reason if none work.
 
 #### Step 0.3: Process scLLM Embeddings
 

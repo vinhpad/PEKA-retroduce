@@ -190,4 +190,11 @@ widening the selection later only fetches the difference.
   data or checkpoint is missing, printing a reason. `DATASETS`, `FEATURE_TYPES` and
   `BINNED_OPTIONS` override from the environment; binned is off by default since the paper
   reports raw expression only.
+- `gene_name_alignment` reads the symbol <-> Ensembl-ID map through
+  `hest1k_helper.fetch_ensembl_gene_map`, which prefers the shipped cache
+  `support_files/ensembl_gene_map.tsv` and only then queries BioMart across the www /
+  useast / asia mirrors. A down Ensembl mirror replies **HTTP 200 with an HTML "Service
+  unavailable" page**, so the fetcher validates the body rather than the status code; the
+  old `biomart`-package path surfaced this as `ParseError: mismatched tag`. Delete the
+  cache to refresh it.
 - There is still no test suite; verification means running a pipeline stage.

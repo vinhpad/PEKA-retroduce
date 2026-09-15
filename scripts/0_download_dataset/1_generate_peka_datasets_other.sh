@@ -7,8 +7,9 @@ cd "$script_dir"
 DATABASE_ROOT="${PROJECT_ROOT}/PEKA/DATA/other_cancer/"
 
 DATABASE="peka_datasets.csv"
-# Which sub-datasets of $DATABASE to build. Leave empty to build every row of the CSV,
-# which requires the corresponding WSIs to have been downloaded first.
+# Which rows of $DATABASE to build. peka_datasets.csv holds every tissue, while
+# $DATABASE_ROOT points at one of them, so this list must name only rows belonging to
+# that tissue: leaving it empty builds all 7 rows into this tissue's folder.
 DATASET_NAMES="kidney_visium_74k liver_visium_37k lung_visium_65k"
 echo "PROJECT_ROOT: $PROJECT_ROOT"
 echo "DATABASE_ROOT: $DATABASE_ROOT"

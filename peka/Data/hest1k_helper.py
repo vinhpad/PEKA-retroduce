@@ -6,7 +6,7 @@ from hest import load_hest
 import re
 from tqdm import tqdm
 from dataclasses import dataclass
-from biomart import BiomartServer
+import requests
 from pathlib import Path
 import scanpy as sc
 import h5py
@@ -451,34 +451,105 @@ def preprocess_gene_name(gene):
             return part
     return gene
 
+# Ensembl answers a request to a mirror that is down with HTTP 200 and an HTML
+# "Service unavailable" page, so the status code is not a usable health signal — the
+# body has to be inspected. www.ensembl.org also 308-redirects to the current archive
+# host during release transitions, and that archive can be the one that is down.
+ENSEMBL_MIRRORS = [
+    "https://www.ensembl.org/biomart/martservice",
+    "https://useast.ensembl.org/biomart/martservice",
+    "https://asia.ensembl.org/biomart/martservice",
+]
+ENSEMBL_GENE_MAP_QUERY = (
+    '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE Query>'
+    '<Query virtualSchemaName="default" formatter="TSV" header="0" uniqueRows="0"'
+    ' count="" datasetConfigVersion="0.6">'
+    '<Dataset name="hsapiens_gene_ensembl" interface="default">'
+    '<Attribute name="ensembl_gene_id"/><Attribute name="external_gene_name"/>'
+    '</Dataset></Query>'
+)
+ENSEMBL_GENE_MAP_CACHE = f"{WORKSPACE_DIR}/support_files/ensembl_gene_map.tsv"
+
+
+def _parse_ensembl_gene_map(text):
+    """ensembl_id <tab> gene_symbol -> the two lookup dicts.
+
+    Rows whose symbol is empty collapse to a single field after strip() and are dropped,
+    which is what the original biomart-based implementation did.
+    """
+    gene_name_to_id, ensembl_id_to_gene_name = {}, {}
+    for line in text.split("\n"):
+        if not line:
+            continue
+        fields = line.strip().split("\t")
+        if len(fields) == 2:
+            ensembl_id, gene_name = fields
+            gene_name_to_id[gene_name] = ensembl_id
+            ensembl_id_to_gene_name[ensembl_id] = gene_name
+    return gene_name_to_id, ensembl_id_to_gene_name
+
+
+def fetch_ensembl_gene_map(cache_path=ENSEMBL_GENE_MAP_CACHE, force=False, timeout=180):
+    """Gene symbol <-> Ensembl ID mapping, from the local cache or a live BioMart mirror.
+
+    The cache keeps gene-name alignment reproducible and lets the pipeline run offline;
+    delete it (or pass force=True) to refresh against the current Ensembl release.
+    """
+    if not force and cache_path and os.path.exists(cache_path):
+        logger.info(f"🤖 using cached Ensembl gene map: {cache_path}")
+        with open(cache_path, encoding="utf-8") as f:
+            return _parse_ensembl_gene_map(f.read())
+
+    failures = []
+    for url in ENSEMBL_MIRRORS:
+        logger.info(f"🤖 querying BioMart: {url}")
+        try:
+            resp = requests.post(url, data={"query": ENSEMBL_GENE_MAP_QUERY}, timeout=timeout)
+        except Exception as e:
+            failures.append(f"{url}: {type(e).__name__}: {e}")
+            continue
+        text = resp.text
+        if resp.status_code != 200:
+            failures.append(f"{url}: HTTP {resp.status_code}")
+            continue
+        if text.lstrip().startswith("<"):
+            # an HTML error page or a BioMart XML fault, not TSV
+            failures.append(f"{url}: HTTP 200 but the body is markup, not TSV "
+                            f"(mirror down or query rejected)")
+            continue
+        gene_name_to_id, ensembl_id_to_gene_name = _parse_ensembl_gene_map(text)
+        if len(ensembl_id_to_gene_name) < 1000:
+            failures.append(f"{url}: only {len(ensembl_id_to_gene_name)} rows parsed")
+            continue
+        logger.info(f"🤖 got {len(ensembl_id_to_gene_name)} gene mappings from {url}")
+        if cache_path:
+            try:
+                os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    f.write(text)
+                logger.info(f"🤖 cached to {cache_path}")
+            except Exception as e:
+                logger.warning(f"🤖 could not write gene map cache: {e}")
+        return gene_name_to_id, ensembl_id_to_gene_name
+
+    raise RuntimeError(
+        "Could not fetch the Ensembl gene map from any BioMart mirror.\n  "
+        + "\n  ".join(failures)
+        + f"\n\nEnsembl mirrors return HTTP 200 with an HTML 'Service unavailable' page "
+          f"while they are down, so this is usually transient — retry later, or drop a "
+          f"previously downloaded TSV (ensembl_gene_id<TAB>gene_symbol, no header) at:\n"
+          f"  {cache_path}"
+    )
+
+
 def gene_name_alignment(hest_data,subdataset_folder):
     logger.info(f"🤖 aligning gene names for {subdataset_folder}")
     gene_name_map_folder = f"{subdataset_folder}/aligned_gene_name/"
     os.makedirs(gene_name_map_folder, exist_ok=True)
     new_adata_folder = f"{subdataset_folder}/aligned_adata/"
     os.makedirs(new_adata_folder, exist_ok=True)
-    # Connect to Ensembl's BioMart service
-    server = BiomartServer("http://www.ensembl.org/biomart")
-
-    # Get human gene dataset
-    dataset = server.datasets['hsapiens_gene_ensembl']
-
-    # Get all gene symbols and corresponding Ensembl gene IDs
-    response = dataset.search({
-        'attributes': ['ensembl_gene_id', 'external_gene_name']
-    })
-
-    # Parse results and establish bidirectional mapping
-    lines = response.content.decode('utf-8').split('\n')
-    gene_name_to_id = {}
-    ensembl_id_to_gene_name = {}
-    for line in lines:
-        if line:
-            data_in_line = line.strip().split('\t')
-            if len(data_in_line) == 2:
-                ensembl_id, gene_name = data_in_line
-                gene_name_to_id[gene_name] = ensembl_id
-                ensembl_id_to_gene_name[ensembl_id] = gene_name
+    # symbol <-> Ensembl ID mapping, from the local cache or a live BioMart mirror
+    gene_name_to_id, ensembl_id_to_gene_name = fetch_ensembl_gene_map()
 
 
     for i, hest_d in enumerate(hest_data):
