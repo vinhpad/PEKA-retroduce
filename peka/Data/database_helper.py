@@ -26,7 +26,11 @@ def create_hest1k_sub_database_instance(csv_file_path, dataset_name,
         row['dataset_storage_folder'] = data_root
         row['hest_loc'] = hest_storage_path
     else:
-        assert row['dataset_storage_folder'] is not None and row['hest_loc'] is not None, "dataset_storage_folder and hest_loc must be provided if copy_flag is False"
+        if pd.isna(row['dataset_storage_folder']) or pd.isna(row['hest_loc']):
+            raise ValueError(
+                f"Dataset '{dataset_name}' has an empty dataset_storage_folder or hest_loc in "
+                f"{csv_file_path}. Re-run the dataset launcher so runtime paths are refreshed."
+            )
     # Convert platform string to list
     platform_list = row['platform'].split() if pd.notna(row['platform']) else []
     # Replace _ with space
@@ -80,6 +84,7 @@ def check_database_status(data_root, hest_storage_path,
     # Use for loop to iterate through dataset name list and create instances
     datasets_info = []
     target_datasets_infos = pd.read_csv(target_csv_path)
+    refresh_runtime_paths = data_root is not None and hest_storage_path is not None
     dataset_name_list = target_datasets_infos['dataset_name'].to_list()
     for dataset_name in dataset_name_list:
         dataset = create_hest1k_sub_database_instance(
@@ -87,18 +92,19 @@ def check_database_status(data_root, hest_storage_path,
             dataset_name=dataset_name,
             data_root=data_root,
             hest_storage_path=hest_storage_path,
-            copy_flag=copy_flag
+            copy_flag=copy_flag or refresh_runtime_paths
         )
         datasets_info.append({dataset_name: dataset})
 
     # 3. Update dataset_config.csv
-    if copy_flag:
+    if copy_flag or refresh_runtime_paths:
         logger.info(f" 🤖 update dataset_config.csv")
-        target_datasets_infos["dataset_storage_folder"] = [dataset.dataset_storage_folder for i in range(len(datasets_info))]
-        target_datasets_infos["hest_loc"] = [dataset.hest_loc for i in range(len(datasets_info))]
-        target_datasets_infos["align_gene_name_files"] = [dataset.align_gene_name_files for i in range(len(datasets_info))]
-        target_datasets_infos["extract_patches_files"] = [dataset.extract_patches_files for i in range(len(datasets_info))]
-        target_datasets_infos["with_scLLM_embed_files"] = [dataset.with_scLLM_embed_files for i in range(len(datasets_info))]
+        datasets = [next(iter(dataset_info.values())) for dataset_info in datasets_info]
+        target_datasets_infos["dataset_storage_folder"] = [dataset.dataset_storage_folder for dataset in datasets]
+        target_datasets_infos["hest_loc"] = [dataset.hest_loc for dataset in datasets]
+        target_datasets_infos["align_gene_name_files"] = [dataset.align_gene_name_files for dataset in datasets]
+        target_datasets_infos["extract_patches_files"] = [dataset.extract_patches_files for dataset in datasets]
+        target_datasets_infos["with_scLLM_embed_files"] = [dataset.with_scLLM_embed_files for dataset in datasets]
         target_datasets_infos.to_csv(target_csv_path, index=False)
         logger.info(f" 🤖 update dataset_config.csv for storage folder and preprocess info")
     logger.info(f" 🤖 check database status done")

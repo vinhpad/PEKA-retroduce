@@ -38,7 +38,7 @@ if __name__ == "__main__":
     load_dotenv(dotenv_path=env_path)
     # get environment variables
     hest_storage_path = os.getenv("HEST1K_STORAGE_PATH")
-    data_root = args.database_root
+    data_root = os.path.abspath(args.database_root)
     from peka.Data.hest1k_helper import construct_sub_dataset_index, HEST1K_sub_database,\
                                                 extract_patches_from_hest, load_subdataset,\
                                                 gene_name_alignment

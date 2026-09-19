@@ -1105,17 +1105,23 @@ PEKA uses Weights & Biases for experiment tracking. Ensure you have:
    - `get_preprocess_status` compares file counts per stage. Delete the affected
      `aligned_adata/` or `patches/` folder and re-run Step 0.2.
 
-10. **CUDA Out of Memory**
+10. **Dataset generation writes to `nan/<dataset>` and then reports a missing index**
+    - `dataset_config.csv` contains an empty/stale `dataset_storage_folder`. Re-run the
+      relevant `1_generate_peka_datasets_*.sh`; the launcher now refreshes runtime storage and
+      HEST paths in the existing CSV. A stray `nan/` folder from the failed run is unused and
+      may be removed after confirming the real dataset directory is correct.
+
+11. **CUDA Out of Memory**
    - Reduce `batch_size` in the dataset config
    - Lower `lora_r` in the model config, or use a smaller `patch_size`
    - Run `bash 3_exp_checker.sh` to probe what the GPU can hold
 
-11. **HuggingFace Authentication**
+12. **HuggingFace Authentication**
     - Verify `HF_TOKEN` is valid and has accepted the gated model terms for
       `bioptimus/H-optimus-0` and `MahmoodLab/UNI`
     - Try `huggingface-cli login`
 
-12. **WANDB Issues**
+13. **WANDB Issues**
     - Verify `WANDB_API_KEY` and `WANDB_ENTITY` in `.env`
     - Try `wandb login`, or set `with_logger` to something other than `wandb` in the
       trainer config to disable logging
