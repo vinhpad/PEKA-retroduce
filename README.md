@@ -501,8 +501,10 @@ Produces `patches_embed/H-optimus-0/` and `patches_embed/UNI/`.
 
 #### Step 0.5: Generate Cluster Labels for Knowledge Distillation
 
-K-means over the scLLM embeddings; the cluster id becomes the classification target that
-teacher and student are both scored on.
+K-means over the scLLM embeddings writes the initial cluster-label column required by the
+dataset loader. With the default prototype loss enabled, Phase 1 does **not** train on these
+full-dataset assignments: it refits K-means on the training split and assigns validation spots
+to the frozen train centroids before training the classifier.
 
 ```bash
 bash 5_generate_cluster_label_for_KD.sh
@@ -513,7 +515,8 @@ Set `TISSUE_NAME`, `DATASET_NAME`, `SCLLM_EMBEDDER_NAME`, `CKPT` and `N_CLUSTERS
 `paired_seq` AnnData as `obs["gen_clustered_label_<N_CLUSTERS>"]`, which is what
 `label_name` in the dataset configs refers to.
 
-Skip this step if you train with `kd_lora_train_with_cluster.py`, which clusters on the fly.
+You may skip this step only when using `kd_lora_train_with_cluster.py --dataset_folder ...`;
+that entry point creates the initial column before loading the labeled dataset config.
 
 #### Step 0.6: Verify Environment and Data Preparation
 
@@ -549,8 +552,15 @@ Training has two phases inside one run:
 1. an MLP classifier is trained on the **precomputed scLLM embeddings** to predict the
    cluster labels — this becomes the frozen teacher head;
 2. the student (PEFT-adapted image encoder + translate head) maps patches into the same
-   space, and the same frozen head scores both sides. The loss is
-   `alpha * KL(soft, T=temperature) + (1 - alpha) * CrossEntropy(hard labels)`.
+   space, and the same frozen head scores both sides. The default loss is
+   `alpha * KL(soft, T=temperature) + (1 - alpha) * CrossEntropy(hard labels)
+   + prototype_loss_weight * KL(student prototype distribution || teacher prototype distribution)`.
+
+For leakage-free clustering, the 80/20 split is created first. K-means and teacher prototypes
+are fit only on normalized **training** embeddings; validation labels are assigned by the fixed
+train centroids. After `prototype_warmup_epochs`, student prototypes update once per epoch by
+EMA and are anchored back to the fixed teacher prototypes. Validation never contributes to
+K-means fitting or EMA updates.
 
 Run from `scripts/1_train_with_2_encoders`. Config paths are relative to
 `hydra_zen/Configs/`, and hyperparameters come from those YAMLs — the scripts do not
@@ -578,8 +588,17 @@ python kd_lora_train.py \
     --exp_name "breast_kd_lora_exp1"
 ```
 
-Add `--phase1_ckpt <run>/phase1/classifier.pt` to reuse a teacher head and skip phase 1.
-Other options: `--phase1_epochs`, `--phase1_lr`, `--phase1_hidden_dim`.
+Select another benchmark with, for example:
+
+```bash
+DATASET=kidney bash train_kd_lora.sh   # breast | kidney | liver | lung
+```
+
+Do not pass an old `--phase1_ckpt` while prototype loss is enabled: every run refits train-only
+clusters, so an old classifier's class IDs need not match the new centroids. To reuse the legacy
+fixed-label classifier path, first set `prototype_loss_weight: 0.0` in
+`hydra_zen/Configs/PL_Model/kd_lora.yaml`. Other options are `--phase1_epochs`, `--phase1_lr`,
+and `--phase1_hidden_dim`.
 
 The optimizer config **must** use `CrossEntropyLoss` (`Optimizers/kd_lora.yaml`);
 `Optimizers/default.yaml` is the MSE regression variant used by `simple_train.py` and is
@@ -595,17 +614,24 @@ via `translate_additional_params.peft_method`:
 | HRA | `Models/H-optimus-0_HRA_MLP.yaml` | `Models/UNI_HRA_MLP.yaml` |
 | Bone | `Models/H-optimus-0_Bone_MLP.yaml` | `Models/UNI_Bone_MLP.yaml` |
 
-**Training with on-the-fly clustering.** Computes the cluster labels during the run, so
-Step 0.5 is not required — use a dataset config **without** `_with_clustered100_label`:
+**Bootstrap labels during training.** This avoids running Step 0.5 separately. Pass the dataset
+folder so the script creates the initial `gen_clustered_label_100` column, but still use the
+labeled dataset config; the prototype stage then replaces those initial assignments with the
+train-only clusters used by Phase 1 and Phase 2:
 
 ```bash
 python kd_lora_train_with_cluster.py \
-    --dataset_config Datasets/breast_visium_26k_scFoundation.yaml \
+    --dataset_folder ../../DATA/breast/breast_visium_26k \
+    --dataset_config Datasets/breast_visium_26k_scFoundation_with_clustered100_label.yaml \
     --model_config Models/H-optimus-0_Bone_MLP.yaml \
     --optimizer_config Optimizers/kd_lora.yaml \
     --trainer_config Trainers/kd_lora.yaml \
     --exp_name "breast_kd_lora_cluster_exp1"
 ```
+
+`kd_lora_train_with_cluster.py` currently bootstraps scFoundation/default_model with 100
+clusters. For other values, generate labels explicitly in Step 0.5 and keep `num_classes`, the
+dataset config's `label_name`, and `N_CLUSTERS` identical.
 
 **What a run writes:**
 ```
@@ -909,11 +935,12 @@ this repo. Values marked ✅ are already the shipped defaults.
 **Bone requires `peft>=0.14.0`** — `BoneConfig` does not exist before that, and the error
 message from `model_part_helpers` says so. `pip install -U "peft>=0.14.0"`.
 
-Not stated in the paper, so left at the repo defaults: KD temperature (`temperature: 2.0`),
-number of cluster labels (`N_CLUSTERS=100` in Step 0.5; the paper says "k-nearest neighbor
-clustering" without giving k), and batch size (the paper only reports 12 GPU hours on one
-V100). `batch_size: 8` × `accumulate_grad_batches: 4` here gives an effective batch of 32
-and fits a 24GB card.
+Not stated in the paper: KD temperature (`temperature: 2.0`), number of cluster labels
+(`num_classes: 100`; the paper says "k-nearest neighbor clustering" without giving k), and
+the prototype-loss/EMA settings below. Treat prototype mode as an additional experiment and
+set `prototype_loss_weight: 0.0` when reproducing the previous fixed-label objective exactly.
+The paper also does not state batch size; `batch_size: 8` × `accumulate_grad_batches: 4` here
+gives an effective batch of 32 and fits a 24GB card.
 
 The paper reports ~5% of backbone parameters as trainable; `kd_lora_train.py` prints the
 trainable count at startup, so you can check that directly.
@@ -930,7 +957,7 @@ bash 1_generate_peka_datasets_breast.sh
 # place the scFoundation checkpoints before the next step (see Prerequisite above)
 bash 2_scLLM_embedding_process.sh
 bash 4_extract_img_features_breast.sh
-bash 5_generate_cluster_label_for_KD.sh
+bash 5_generate_cluster_label_for_KD.sh  # bootstrap column; Phase 1 refits train-only clusters
 bash 3_exp_checker.sh                  # optional GPU / PEFT feasibility probe
 
 # --- Phase 1: Model Training ---
@@ -999,9 +1026,27 @@ Things worth knowing when editing these:
   (`Trainers/kd_lora.yaml` monitors `val_CosineSimilarity`, `Trainers/default.yaml`
   monitors `MSE_val`).
 - Dataset configs named `*_with_clustered100_label.yaml` set `label_name` to the cluster
-  label produced by Step 0.5; the plain ones leave it null.
+  column produced by Step 0.5. With prototype loss enabled, this column lets the loader start,
+  then its in-memory train/validation labels are replaced from train-fitted centroids before
+  Phase 1. Plain configs leave `label_name` null and cannot feed the KD classifier.
 - `hydra_zen/Configs/Datasets/peka_{breast,other}_datasets.csv` define which HEST1k slices
   exist. They drive the download, the dataset build, and the binning step alike.
+
+Prototype clustering is configured in `hydra_zen/Configs/PL_Model/kd_lora.yaml`:
+
+| Setting | Default | Meaning |
+|---|---:|---|
+| `prototype_loss_weight` | `0.1` | Weight added to the existing KD objective; set `0.0` for the legacy fixed-label path |
+| `prototype_temperature` | `0.1` | Temperature for teacher/student cosine-to-prototype distributions |
+| `prototype_warmup_epochs` | `5` | Keep teacher prototypes fixed before EMA adaptation starts |
+| `prototype_ema_momentum` | `0.95` | Momentum applied to student centroids between epochs |
+| `teacher_anchor_weight` | `0.5` | Fraction of the fixed teacher centroid retained after each EMA update |
+| `cluster_diagnostic_sample_size` | `2000` | Train-only sample used for clustering diagnostics; `0` disables score computation |
+
+At startup the run reports and logs train-only Silhouette, Calinski-Harabasz,
+Davies-Bouldin, and min/max cluster sizes. During Phase 2, W&B receives
+`{train,val}_prototype_loss` and `{train,val}_prototype_accuracy`. Dynamic prototypes update
+from training batches only; distributed runs all-reduce prototype sums/counts before EMA.
 
 ### Experiment Tracking
 
@@ -1051,21 +1096,26 @@ PEKA uses Weights & Biases for experiment tracking. Ensure you have:
    - Pass `--optimizer_config Optimizers/kd_lora.yaml`; `Optimizers/default.yaml` is the
      MSE regression variant.
 
-8. **Gene name alignment or patch counts reported as inconsistent**
+8. **`--phase1_ckpt cannot be reused when prototype loss refits train-only clusters`**
+   - This is intentional: the saved classifier's class IDs belong to a previous set of
+     centroids. Remove `--phase1_ckpt` and retrain Phase 1. For a legacy fixed-label run,
+     set `prototype_loss_weight: 0.0` before reusing the classifier.
+
+9. **Gene name alignment or patch counts reported as inconsistent**
    - `get_preprocess_status` compares file counts per stage. Delete the affected
      `aligned_adata/` or `patches/` folder and re-run Step 0.2.
 
-9. **CUDA Out of Memory**
+10. **CUDA Out of Memory**
    - Reduce `batch_size` in the dataset config
    - Lower `lora_r` in the model config, or use a smaller `patch_size`
    - Run `bash 3_exp_checker.sh` to probe what the GPU can hold
 
-10. **HuggingFace Authentication**
+11. **HuggingFace Authentication**
     - Verify `HF_TOKEN` is valid and has accepted the gated model terms for
       `bioptimus/H-optimus-0` and `MahmoodLab/UNI`
     - Try `huggingface-cli login`
 
-11. **WANDB Issues**
+12. **WANDB Issues**
     - Verify `WANDB_API_KEY` and `WANDB_ENTITY` in `.env`
     - Try `wandb login`, or set `with_logger` to something other than `wandb` in the
       trainer config to disable logging
