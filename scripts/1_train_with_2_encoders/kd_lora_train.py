@@ -99,6 +99,8 @@ def train_phase_2(
     loss_instance,
     trainer_config,
     pl_model_config,
+    teacher_prototypes,
+    cluster_diagnostics,
     exp_name,
     model_name,
 ):
@@ -121,6 +123,9 @@ def train_phase_2(
     
     # set teacher model
     kd_model.setup_teacher_model(teacher_classifier)
+    if kd_model.prototype_loss_weight > 0:
+        kd_model.setup_prototypes(teacher_prototypes)
+        print(f" Cluster diagnostics (train split): {cluster_diagnostics}")
     
     # create trainer
     # everything not supplied here (max_epochs, clip_grad, checkpoint format, ...)
@@ -142,6 +147,8 @@ def train_phase_2(
         # logging
         wandb_api_key=WANDB_API_KEY,
     )
+    if cluster_diagnostics and trainer.logger:
+        trainer.logger.log_metrics(cluster_diagnostics, step=0)
     
     # train model
     trainer.fit(kd_model, train_loader, val_loader)
@@ -191,6 +198,21 @@ def main():
         split_seed=42,
         random_sample_barcode=False
     )
+
+    teacher_prototypes = None
+    cluster_diagnostics = None
+    if getattr(pl_model_config, "prototype_loss_weight", 0.0) > 0:
+        if args.phase1_ckpt:
+            raise ValueError(
+                "--phase1_ckpt cannot be reused when prototype loss refits train-only clusters; "
+                "train Phase 1 again so its class IDs match the new centroids"
+            )
+        teacher_prototypes, cluster_diagnostics = pl_KD_LoRA.prepare_training_clusters(
+            train_loader,
+            val_loader,
+            num_classes=pl_model_config.num_classes,
+            diagnostic_sample_size=getattr(pl_model_config, "cluster_diagnostic_sample_size", 2000),
+        )
     
     # instantiate model and optimizer
     model = instantiate(model_config, target_dim=target_dim)
@@ -241,6 +263,8 @@ def main():
         loss_instance=loss_instance,
         trainer_config=trainer_config,
         pl_model_config=pl_model_config,
+        teacher_prototypes=teacher_prototypes,
+        cluster_diagnostics=cluster_diagnostics,
         exp_name=args.exp_name,
         model_name=os.path.splitext(os.path.basename(args.model_config))[0],
     )

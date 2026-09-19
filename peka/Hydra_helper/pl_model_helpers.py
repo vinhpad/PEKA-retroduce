@@ -64,7 +64,12 @@ def create_pl_model(
             input_dim=pl_model_config.input_dim,
             temperature=pl_model_config.temperature,
             alpha=pl_model_config.alpha,
-            lora_save_path=pl_model_config.lora_save_path
+            lora_save_path=pl_model_config.lora_save_path,
+            prototype_loss_weight=getattr(pl_model_config, "prototype_loss_weight", 0.0),
+            prototype_temperature=getattr(pl_model_config, "prototype_temperature", 0.1),
+            prototype_warmup_epochs=getattr(pl_model_config, "prototype_warmup_epochs", 5),
+            prototype_ema_momentum=getattr(pl_model_config, "prototype_ema_momentum", 0.95),
+            teacher_anchor_weight=getattr(pl_model_config, "teacher_anchor_weight", 0.5),
         )
         
     else:

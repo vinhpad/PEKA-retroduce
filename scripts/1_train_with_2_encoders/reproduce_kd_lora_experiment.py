@@ -77,7 +77,16 @@ def main():
         random_sample_barcode=True if not USE_SPLIT_DATASET else False
     )
 
-    # Phase 1: Train MLP classifier
+    teacher_prototypes = None
+    cluster_diagnostics = None
+    if getattr(pl_model_config, "prototype_loss_weight", 0.0) > 0:
+        teacher_prototypes, cluster_diagnostics = pl_KD_LoRA.prepare_training_clusters(
+            train_loader,
+            val_loader,
+            num_classes=pl_model_config.num_classes,
+            diagnostic_sample_size=getattr(pl_model_config, "cluster_diagnostic_sample_size", 2000),
+        )
+
     teacher_classifier = pl_KD_LoRA.train_phase1(
         train_loader=train_loader,
         val_loader=val_loader,
@@ -111,6 +120,9 @@ def main():
 
     # Setup teacher model
     kd_model.setup_teacher_model(teacher_classifier)
+    if kd_model.prototype_loss_weight > 0:
+        kd_model.setup_prototypes(teacher_prototypes)
+        print(f" Cluster diagnostics (train split): {cluster_diagnostics}")
 
     # Rebuild the trainer from the saved trainer config so epochs, callbacks and
     # logging match the original run
@@ -125,6 +137,8 @@ def main():
         trainer_output_dir=os.path.join(reproduction_dir, "phase2"),
         wandb_api_key=WANDB_API_KEY,
     )
+    if cluster_diagnostics and trainer.logger:
+        trainer.logger.log_metrics(cluster_diagnostics, step=0)
 
     # Train model
     trainer.fit(kd_model, train_loader, val_loader)

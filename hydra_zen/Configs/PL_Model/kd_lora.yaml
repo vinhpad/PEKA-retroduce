@@ -5,3 +5,11 @@ input_dim: 1536  # scLLM embedding dimension
 temperature: 2.0
 alpha: 0.5  # weight for distillation loss
 lora_save_path: ???  # 由外部提供，通常是output_dir/phase2/lora
+
+# Preserve teacher cluster geometry while allowing stable student-driven adaptation.
+prototype_loss_weight: 0.1
+prototype_temperature: 0.1
+prototype_warmup_epochs: 5
+prototype_ema_momentum: 0.95
+teacher_anchor_weight: 0.5
+cluster_diagnostic_sample_size: 2000

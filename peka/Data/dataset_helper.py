@@ -44,9 +44,13 @@ class BatchLocalityDataset(Dataset):
         self.split_seed = split_seed
 
         # Collect Anndata files (.h5ad)
-        self.anndata_files = [os.path.join(anndata_folder, f) for f in os.listdir(anndata_folder) if f.endswith('.h5ad')]
+        self.anndata_files = sorted(
+            os.path.join(anndata_folder, f) for f in os.listdir(anndata_folder) if f.endswith('.h5ad')
+        )
         # Collect embedding files (.npy)
-        self.embedding_files = [os.path.join(embedding_folder, f) for f in os.listdir(embedding_folder) if f.endswith('.npy')]
+        self.embedding_files = sorted(
+            os.path.join(embedding_folder, f) for f in os.listdir(embedding_folder) if f.endswith('.npy')
+        )
 
         # Files that exist in both anndata_files and embedding_files, remove those that don't exist. Note that the two lists have different file extensions, only compare filenames
         common_fname = self._get_common_fname(self.anndata_files, self.embedding_files)
@@ -278,6 +282,52 @@ class BatchLocalityDataset(Dataset):
 
     def __len__(self):
         return self.valid_samples_counts
+
+    def iter_embedding_batches(self):
+        """Yield selected embeddings grouped by source file.
+
+        This avoids decoding image patches when a training stage only needs the
+        teacher embedding geometry, for example when building cluster prototypes.
+        """
+        selected_by_file = {}
+        for file_idx, barcode_idx in self.valid_samples_idx:
+            selected_by_file.setdefault(file_idx, []).append(barcode_idx)
+
+        for file_idx, barcode_indices in selected_by_file.items():
+            anndata_file = self.anndata_files[file_idx]
+            embedding_file = self._find_embedding_file(anndata_file)
+            embeddings = np.load(embedding_file, mmap_mode="r")
+            file_embeddings = []
+
+            for barcode_idx in barcode_indices:
+                barcode = self.valid_barcodes_in_files[anndata_file][barcode_idx]
+                embedding_ref = self.embedding_data_in_files[anndata_file][barcode]
+                embedding = embedding_ref if self.read_data_and_keep_in_mem else embeddings[embedding_ref]
+                file_embeddings.append(embedding)
+
+            yield np.asarray(file_embeddings, dtype=np.float32)
+
+    def assign_cluster_labels(self, normalized_prototypes):
+        """Assign this split to train-fitted prototypes without mutating on-disk labels."""
+        if self.label_name is None:
+            raise ValueError("Cluster assignment requires a dataset label_name")
+
+        selected_by_file = {}
+        for file_idx, barcode_idx in self.valid_samples_idx:
+            selected_by_file.setdefault(file_idx, []).append(barcode_idx)
+
+        for file_idx, barcode_indices in selected_by_file.items():
+            anndata_file = self.anndata_files[file_idx]
+            embedding_file = self._find_embedding_file(anndata_file)
+            embeddings = np.load(embedding_file, mmap_mode="r")
+            for barcode_idx in barcode_indices:
+                barcode = self.valid_barcodes_in_files[anndata_file][barcode_idx]
+                embedding_ref = self.embedding_data_in_files[anndata_file][barcode]
+                embedding = embedding_ref if self.read_data_and_keep_in_mem else embeddings[embedding_ref]
+                norm = np.linalg.norm(embedding)
+                normalized_embedding = embedding / max(norm, 1e-12)
+                label = int(np.argmax(normalized_embedding @ normalized_prototypes.T))
+                self.label_data_in_files[anndata_file][barcode] = label
 
     ###########################################################################################
     # Data loading logic
